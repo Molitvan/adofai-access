@@ -363,7 +363,25 @@ namespace ADOFAI_Access
                 restart = levelButton.restartLabel.text;
             }
 
-            return BestOf(restart, levelButton.label != null ? levelButton.label.text : null, levelButton.levelName, levelButton.name);
+            string levelToken = GetLevelToken(levelButton.levelName);
+            return BestOf(restart, levelToken, levelButton.label != null ? levelButton.label.text : null, levelButton.levelName, levelButton.name);
+        }
+
+        private static string GetLevelToken(string levelName)
+        {
+            string normalized = NormalizeText(levelName);
+            if (string.IsNullOrEmpty(normalized))
+            {
+                return string.Empty;
+            }
+
+            int dash = normalized.LastIndexOf('-');
+            if (dash < 0 || dash >= normalized.Length - 1)
+            {
+                return string.Empty;
+            }
+
+            return normalized.Substring(dash + 1);
         }
 
         private static string FindTextOnObject(GameObject gameObject)
