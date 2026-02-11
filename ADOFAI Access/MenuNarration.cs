@@ -19,6 +19,9 @@ namespace ADOFAI_Access
         private static string _lastSpoken = string.Empty;
         private static float _lastSpokenAt;
         private static string _lastAnnouncedWorld = string.Empty;
+        private static float _lastLevelStartAt;
+        private static float _lastLevelEndAt;
+        private static float _lastDeathAt;
 
         public static void Tick()
         {
@@ -170,6 +173,67 @@ namespace ADOFAI_Access
 
             _lastAnnouncedWorld = normalizedWorld;
             Speak($"World {normalizedWorld}", interrupt: true);
+        }
+
+        public static void SpeakLevelGetReady()
+        {
+            if (ADOBase.isLevelEditor)
+            {
+                return;
+            }
+
+            Speak("Get ready", interrupt: true);
+        }
+
+        public static void SpeakLevelStart()
+        {
+            if (ADOBase.isLevelEditor)
+            {
+                return;
+            }
+
+            float now = Time.unscaledTime;
+            if (now - _lastLevelStartAt < 0.5f)
+            {
+                return;
+            }
+
+            _lastLevelStartAt = now;
+            Speak("Go", interrupt: true);
+        }
+
+        public static void SpeakLevelEnd()
+        {
+            if (ADOBase.isLevelEditor)
+            {
+                return;
+            }
+
+            float now = Time.unscaledTime;
+            if (now - _lastLevelEndAt < 0.5f)
+            {
+                return;
+            }
+
+            _lastLevelEndAt = now;
+            Speak("Level complete", interrupt: true);
+        }
+
+        public static void SpeakDeath()
+        {
+            if (ADOBase.isLevelEditor)
+            {
+                return;
+            }
+
+            float now = Time.unscaledTime;
+            if (now - _lastDeathAt < 0.5f)
+            {
+                return;
+            }
+
+            _lastDeathAt = now;
+            Speak("You died", interrupt: true);
         }
 
         private static bool TryDescribeSelected(GameObject selected, out string label, out string controlType, out string valueState)
@@ -516,6 +580,51 @@ namespace ADOFAI_Access
             }
 
             MenuNarration.SpeakWorldSelection(__instance.lastVisitedWorld);
+        }
+    }
+
+    [HarmonyPatch(typeof(scrCountdown), nameof(scrCountdown.ShowGetReady))]
+    internal static class LevelGetReadyPatch
+    {
+        private static void Postfix()
+        {
+            MenuNarration.SpeakLevelGetReady();
+        }
+    }
+
+    [HarmonyPatch(typeof(scrController), "PlayerControl_Enter")]
+    internal static class LevelStartPatch
+    {
+        private static void Postfix()
+        {
+            if (ADOBase.isPlayingLevel)
+            {
+                MenuNarration.SpeakLevelStart();
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(scrController), "Won_Enter")]
+    internal static class LevelWonPatch
+    {
+        private static void Postfix()
+        {
+            if (ADOBase.isPlayingLevel)
+            {
+                MenuNarration.SpeakLevelEnd();
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(scrController), "Fail2Action")]
+    internal static class LevelDeathPatch
+    {
+        private static void Postfix()
+        {
+            if (ADOBase.isPlayingLevel)
+            {
+                MenuNarration.SpeakDeath();
+            }
         }
     }
 }
