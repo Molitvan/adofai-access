@@ -6,10 +6,17 @@ using UnityEngine;
 
 namespace ADOFAI_Access
 {
+    internal enum PlayMode
+    {
+        Vanilla = 0,
+        PatternPreview = 1,
+        ListenRepeat = 2
+    }
+
     internal sealed class ModSettingsData
     {
         public bool menuNarrationEnabled = true;
-        public bool patternPreviewEnabledByDefault = false;
+        public PlayMode playMode = PlayMode.Vanilla;
         public int patternPreviewBeatsAhead = 4;
     }
 
@@ -99,6 +106,11 @@ namespace ADOFAI_Access
             else if (_current.patternPreviewBeatsAhead > 16)
             {
                 _current.patternPreviewBeatsAhead = 16;
+            }
+
+            if (!Enum.IsDefined(typeof(PlayMode), _current.playMode))
+            {
+                _current.playMode = PlayMode.Vanilla;
             }
         }
 

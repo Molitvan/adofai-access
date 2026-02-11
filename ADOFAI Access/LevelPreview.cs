@@ -140,11 +140,6 @@ namespace ADOFAI_Access
             _previousSpeedTrialMode = GCS.speedTrialMode;
             _previousSpeedTrialValue = GCS.currentSpeedTrial;
 
-            if (PatternPreview.IsActive)
-            {
-                PatternPreview.Toggle();
-            }
-
             _active = true;
             GCS.practiceMode = true;
             GCS.speedTrialMode = false;

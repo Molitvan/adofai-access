@@ -126,7 +126,7 @@ namespace ADOFAI_Access
                     settings.menuNarrationEnabled = delta > 0;
                     break;
                 case 1:
-                    settings.patternPreviewEnabledByDefault = delta > 0;
+                    PatternPreview.StepMode(delta, speak: false);
                     break;
                 case 2:
                     settings.patternPreviewBeatsAhead += delta;
@@ -154,7 +154,7 @@ namespace ADOFAI_Access
                     settings.menuNarrationEnabled = !settings.menuNarrationEnabled;
                     break;
                 case 1:
-                    settings.patternPreviewEnabledByDefault = !settings.patternPreviewEnabledByDefault;
+                    PatternPreview.StepMode(1, speak: false);
                     break;
                 case 2:
                     settings.patternPreviewBeatsAhead = settings.patternPreviewBeatsAhead >= 16 ? 1 : settings.patternPreviewBeatsAhead + 1;
@@ -174,7 +174,7 @@ namespace ADOFAI_Access
                     MenuNarration.Speak($"Menu narration, {(settings.menuNarrationEnabled ? "on" : "off")}, toggle, 1 of 3", interrupt: true);
                     break;
                 case 1:
-                    MenuNarration.Speak($"Pattern preview by default, {(settings.patternPreviewEnabledByDefault ? "on" : "off")}, toggle, 2 of 3", interrupt: true);
+                    MenuNarration.Speak($"Play mode, {PatternPreview.GetModeLabel(settings.playMode)}, option, 2 of 3", interrupt: true);
                     break;
                 case 2:
                     MenuNarration.Speak($"Pattern preview beats ahead, {settings.patternPreviewBeatsAhead}, setting, 3 of 3", interrupt: true);

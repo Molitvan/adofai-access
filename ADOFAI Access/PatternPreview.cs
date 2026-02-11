@@ -11,13 +11,17 @@ namespace ADOFAI_Access
         private const double CueScheduleHorizonSeconds = 0.25;
         private const double CueLateGraceSeconds = 0.04;
 
-        private static bool _active;
         private static bool _toggleHintSpoken;
-        private static bool _defaultAppliedForCurrentGameplay;
+        private static bool _runtimeModeActive;
+        private static PlayMode _runtimeMode = PlayMode.Vanilla;
+        private static bool _hasStoredPreviousAuto;
+        private static bool _previousAuto;
+        private static int _listenRepeatPhase = -1; // 0 = Listen, 1 = Repeat
         private static readonly HashSet<int> HandledSeqIds = new HashSet<int>();
 
-        public static bool IsActive => _active;
-        public static string ToggleHint => "Press F9 to toggle pattern preview";
+        public static bool IsActive => ModSettings.Current.playMode != PlayMode.Vanilla;
+        public static PlayMode CurrentMode => ModSettings.Current.playMode;
+        public static string ToggleHint => "Press F9 to cycle play mode";
 
         public static void Tick()
         {
@@ -25,7 +29,7 @@ namespace ADOFAI_Access
             if (!inGameplay)
             {
                 _toggleHintSpoken = false;
-                _defaultAppliedForCurrentGameplay = false;
+                StopRuntimeMode();
             }
             else if (!_toggleHintSpoken)
             {
@@ -33,33 +37,32 @@ namespace ADOFAI_Access
                 MenuNarration.Speak(ToggleHint, interrupt: false);
             }
 
-            if (inGameplay && !_defaultAppliedForCurrentGameplay)
-            {
-                _defaultAppliedForCurrentGameplay = true;
-                if (ModSettings.Current.patternPreviewEnabledByDefault && !_active && !LevelPreview.IsActive)
-                {
-                    StartInternal();
-                }
-            }
-
             if (!AccessSettingsMenu.IsOpen && Input.GetKeyDown(ToggleKey))
             {
-                if (!Toggle())
+                if (!inGameplay)
                 {
-                    MenuNarration.Speak("Pattern preview unavailable here", interrupt: true);
+                    MenuNarration.Speak("Play mode unavailable here", interrupt: true);
+                }
+                else
+                {
+                    CycleMode(speak: true);
                 }
             }
 
-            if (!_active)
+            if (!inGameplay || LevelPreview.IsActive)
             {
+                StopRuntimeMode();
                 return;
             }
 
-            if (!IsGameplayRuntimeAvailable())
+            PlayMode desiredMode = ModSettings.Current.playMode;
+            if (desiredMode == PlayMode.Vanilla)
             {
-                StopInternal(speak: false);
+                StopRuntimeMode();
                 return;
             }
+
+            EnsureRuntimeModeStarted(desiredMode);
 
             scrController controller = ADOBase.controller;
             if (controller == null)
@@ -71,64 +74,199 @@ namespace ADOFAI_Access
             {
                 ResetSchedulingState();
                 TapCueService.StopAllCues();
+                if (_runtimeMode == PlayMode.ListenRepeat)
+                {
+                    RestoreAuto();
+                }
                 return;
             }
 
-            TryScheduleNextBarCues();
+            switch (_runtimeMode)
+            {
+                case PlayMode.PatternPreview:
+                    RestoreAuto();
+                    TryScheduleNextBarCues();
+                    break;
+                case PlayMode.ListenRepeat:
+                    TickListenRepeat(controller);
+                    break;
+            }
         }
 
-        public static bool Toggle()
+        public static void CycleMode(bool speak)
         {
-            if (_active)
-            {
-                StopInternal(speak: true);
-                return true;
-            }
-
-            return StartInternal();
+            SetMode(GetNextMode(CurrentMode), speak);
         }
 
-        private static bool StartInternal()
+        public static void StepMode(int delta, bool speak)
         {
-            if (_active)
+            if (delta == 0)
             {
-                return true;
+                return;
             }
 
-            if (!IsGameplayRuntimeAvailable())
+            PlayMode mode = CurrentMode;
+            int steps = Math.Abs(delta);
+            for (int i = 0; i < steps; i++)
             {
-                MelonLogger.Msg("[ADOFAI Access] Pattern preview start rejected (not in gameplay).");
-                return false;
+                mode = delta > 0 ? GetNextMode(mode) : GetPreviousMode(mode);
             }
 
-            if (LevelPreview.IsActive)
+            SetMode(mode, speak);
+        }
+
+        public static void SetMode(PlayMode mode, bool speak)
+        {
+            if (!Enum.IsDefined(typeof(PlayMode), mode))
+            {
+                mode = PlayMode.Vanilla;
+            }
+
+            ModSettings.Current.playMode = mode;
+            ModSettings.Save();
+
+            if (mode != PlayMode.Vanilla && LevelPreview.IsActive)
             {
                 LevelPreview.Toggle();
             }
 
-            _active = true;
-            HandledSeqIds.Clear();
-            MelonLogger.Msg("[ADOFAI Access] Pattern preview enabled.");
-            MenuNarration.Speak("Pattern preview on", interrupt: true);
-            return true;
+            if (speak)
+            {
+                MenuNarration.Speak($"Play mode {GetModeLabel(mode)}", interrupt: true);
+            }
         }
 
-        private static void StopInternal(bool speak)
+        public static string GetModeLabel(PlayMode mode)
         {
-            if (!_active)
+            switch (mode)
+            {
+                case PlayMode.PatternPreview:
+                    return "pattern preview";
+                case PlayMode.ListenRepeat:
+                    return "listen-repeat";
+                default:
+                    return "vanilla";
+            }
+        }
+
+        private static PlayMode GetNextMode(PlayMode mode)
+        {
+            switch (mode)
+            {
+                case PlayMode.PatternPreview:
+                    return PlayMode.ListenRepeat;
+                case PlayMode.ListenRepeat:
+                    return PlayMode.Vanilla;
+                default:
+                    return PlayMode.PatternPreview;
+            }
+        }
+
+        private static PlayMode GetPreviousMode(PlayMode mode)
+        {
+            switch (mode)
+            {
+                case PlayMode.PatternPreview:
+                    return PlayMode.Vanilla;
+                case PlayMode.Vanilla:
+                    return PlayMode.ListenRepeat;
+                default:
+                    return PlayMode.PatternPreview;
+            }
+        }
+
+        private static void EnsureRuntimeModeStarted(PlayMode mode)
+        {
+            if (!_runtimeModeActive)
+            {
+                _runtimeModeActive = true;
+                _runtimeMode = mode;
+                _previousAuto = RDC.auto;
+                _hasStoredPreviousAuto = true;
+                _listenRepeatPhase = -1;
+                ResetSchedulingState();
+                MelonLogger.Msg($"[ADOFAI Access] Play mode runtime active: {GetModeLabel(mode)}.");
+                return;
+            }
+
+            if (_runtimeMode == mode)
             {
                 return;
             }
 
-            _active = false;
-            ResetSchedulingState();
+            RestoreAuto();
             TapCueService.StopAllCues();
+            _runtimeMode = mode;
+            _listenRepeatPhase = -1;
+            ResetSchedulingState();
+            MelonLogger.Msg($"[ADOFAI Access] Play mode runtime switched: {GetModeLabel(mode)}.");
+        }
 
-            if (speak)
+        private static void StopRuntimeMode()
+        {
+            if (!_runtimeModeActive)
             {
-                MelonLogger.Msg("[ADOFAI Access] Pattern preview disabled.");
-                MenuNarration.Speak("Pattern preview off", interrupt: true);
+                return;
             }
+
+            _runtimeModeActive = false;
+            TapCueService.StopAllCues();
+            RestoreAuto();
+            _runtimeMode = PlayMode.Vanilla;
+            _listenRepeatPhase = -1;
+            ResetSchedulingState();
+        }
+
+        private static void RestoreAuto()
+        {
+            if (!_hasStoredPreviousAuto)
+            {
+                return;
+            }
+
+            RDC.auto = _previousAuto;
+        }
+
+        private static void TickListenRepeat(scrController controller)
+        {
+            scrConductor conductor = ADOBase.conductor;
+            if (conductor == null)
+            {
+                return;
+            }
+
+            if (controller.state != States.PlayerControl)
+            {
+                // Do not emit listen-repeat cues during countdown/checkpoint phases.
+                TapCueService.StopAllCues();
+                return;
+            }
+
+            if (!TryGetCurrentBeat(controller, conductor, out double currentBeat))
+            {
+                return;
+            }
+
+            int beatsPerGroup = Math.Max(1, ModSettings.Current.patternPreviewBeatsAhead);
+            int groupIndex = Mathf.FloorToInt((float)(currentBeat / beatsPerGroup));
+            int phase = (groupIndex & 1) == 0 ? 0 : 1;
+            bool phaseChanged = phase != _listenRepeatPhase;
+            if (phaseChanged)
+            {
+                _listenRepeatPhase = phase;
+                ResetSchedulingState();
+                TapCueService.StopAllCues();
+                MenuNarration.Speak(phase == 0 ? "Listen" : "Repeat", interrupt: true);
+            }
+
+            if (phase == 0)
+            {
+                RDC.auto = true;
+                TryScheduleNextBarCues();
+                return;
+            }
+
+            RDC.auto = false;
         }
 
         private static bool IsGameplayRuntimeAvailable()
@@ -149,16 +287,14 @@ namespace ADOFAI_Access
 
         private static void TryScheduleNextBarCues()
         {
-            scrController controller = ADOBase.controller;
             scrConductor conductor = ADOBase.conductor;
             scrLevelMaker levelMaker = ADOBase.lm;
-            if (controller == null || conductor == null || levelMaker == null || levelMaker.listFloors == null)
+            if (conductor == null || levelMaker == null || levelMaker.listFloors == null)
             {
                 return;
             }
 
             double nowDsp = conductor.dspTime;
-
             List<scrFloor> floors = levelMaker.listFloors;
             for (int i = 0; i < floors.Count; i++)
             {
@@ -210,7 +346,6 @@ namespace ADOFAI_Access
             {
                 if (conductor.crotchetAtStart > 0f)
                 {
-                    // Continuous beat during countdown so first-bar preview cues can schedule before PlayerControl.
                     currentBeat = conductor.songposition_minusi / conductor.crotchetAtStart;
                 }
                 else
@@ -282,7 +417,6 @@ namespace ADOFAI_Access
                 return true;
             }
 
-            // Fallback when beat->time interpolation is unavailable.
             float pitch = conductor.song != null && conductor.song.pitch > 0f ? conductor.song.pitch : 1f;
             double leadSeconds = conductor.crotchetAtStart * beatsAhead / pitch;
             previewDueDsp = conductor.dspTimeSongPosZero + targetFloor.entryTimePitchAdj - leadSeconds;
