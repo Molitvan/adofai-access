@@ -175,14 +175,14 @@ namespace ADOFAI_Access
             Speak($"World {normalizedWorld}", interrupt: true);
         }
 
-        public static void SpeakLevelGetReady()
+        public static void SpeakLevelGetReady(string text)
         {
             if (ADOBase.isLevelEditor)
             {
                 return;
             }
 
-            Speak("Get ready", interrupt: true);
+            Speak(BestOf(text, RDString.Get("status.getReady")), interrupt: true);
         }
 
         public static void SpeakLevelStart()
@@ -199,10 +199,10 @@ namespace ADOFAI_Access
             }
 
             _lastLevelStartAt = now;
-            Speak("Go", interrupt: true);
+            Speak(RDString.Get("status.go"), interrupt: true);
         }
 
-        public static void SpeakLevelEnd()
+        public static void SpeakLevelEnd(string text)
         {
             if (ADOBase.isLevelEditor)
             {
@@ -216,7 +216,7 @@ namespace ADOFAI_Access
             }
 
             _lastLevelEndAt = now;
-            Speak("Level complete", interrupt: true);
+            Speak(BestOf(text, RDString.Get("status.congratulations"), "Level complete"), interrupt: true);
         }
 
         public static void SpeakDeath()
@@ -586,9 +586,10 @@ namespace ADOFAI_Access
     [HarmonyPatch(typeof(scrCountdown), nameof(scrCountdown.ShowGetReady))]
     internal static class LevelGetReadyPatch
     {
-        private static void Postfix()
+        private static void Postfix(scrCountdown __instance)
         {
-            MenuNarration.SpeakLevelGetReady();
+            Text text = __instance != null ? __instance.GetComponent<Text>() : null;
+            MenuNarration.SpeakLevelGetReady(text != null ? text.text : null);
         }
     }
 
@@ -611,7 +612,9 @@ namespace ADOFAI_Access
         {
             if (ADOBase.isPlayingLevel)
             {
-                MenuNarration.SpeakLevelEnd();
+                scrController controller = ADOBase.controller;
+                string text = controller != null && controller.txtCongrats != null ? controller.txtCongrats.text : null;
+                MenuNarration.SpeakLevelEnd(text);
             }
         }
     }
@@ -625,6 +628,21 @@ namespace ADOFAI_Access
             {
                 MenuNarration.SpeakDeath();
             }
+        }
+    }
+
+    [HarmonyPatch(typeof(scrPressToStart), nameof(scrPressToStart.ShowText))]
+    internal static class PressToBeginPatch
+    {
+        private static void Postfix(scrPressToStart __instance)
+        {
+            if (__instance == null || ADOBase.isLevelEditor)
+            {
+                return;
+            }
+
+            Text text = __instance.GetComponent<Text>();
+            MenuNarration.Speak(text != null ? text.text : RDString.Get(ADOBase.isMobile ? "status.tapToBegin" : "status.pressToBegin"), interrupt: true);
         }
     }
 }
