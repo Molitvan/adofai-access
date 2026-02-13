@@ -13,7 +13,21 @@ namespace ADOFAI_Access
     internal static class TapCueService
     {
         private const int MaxPoolSources = 32;
-        private const string EmbeddedCueResourceName = "ADOFAI_Access.Audio.tap.wav";
+
+        private sealed class CueClipState
+        {
+            public string FileName;
+            public string EmbeddedResourceName;
+            public string GeneratedClipName;
+            public float GeneratedToneHz;
+            public AudioClip CustomClip;
+            public AudioClip FallbackClip;
+            public bool EmbeddedCueLoadAttempted;
+            public bool IsLoadingCue;
+            public bool CustomCueLoadFailed;
+            public string LoadedCuePath = string.Empty;
+            public readonly Dictionary<string, AudioClip> TimeScaledClipCache = new Dictionary<string, AudioClip>();
+        }
 
         private sealed class CueSourceSlot
         {
@@ -23,42 +37,106 @@ namespace ADOFAI_Access
 
         private static AudioSource _cueSource;
         private static readonly List<CueSourceSlot> CuePool = new List<CueSourceSlot>();
-        private static AudioClip _cueClip;
-        private static AudioClip _fallbackClip;
-        private static bool _embeddedCueLoadAttempted;
-        private static bool _isLoadingCue;
-        private static bool _customCueLoadFailed;
-        private static string _loadedCuePath = string.Empty;
+        private static readonly CueClipState TapCueState = new CueClipState
+        {
+            FileName = "tap.wav",
+            EmbeddedResourceName = "ADOFAI_Access.Audio.tap.wav",
+            GeneratedClipName = "ADOFAI_Access_DefaultPreviewCue",
+            GeneratedToneHz = 1760f
+        };
+        private static readonly CueClipState ListenStartCueState = new CueClipState
+        {
+            FileName = "listen_start.wav",
+            EmbeddedResourceName = "ADOFAI_Access.Audio.listen_start.wav",
+            GeneratedClipName = "ADOFAI_Access_DefaultListenStartCue",
+            GeneratedToneHz = 1318.51f
+        };
+        private static readonly CueClipState ListenEndCueState = new CueClipState
+        {
+            FileName = "listen_end.wav",
+            EmbeddedResourceName = "ADOFAI_Access.Audio.listen_end.wav",
+            GeneratedClipName = "ADOFAI_Access_DefaultListenEndCue",
+            GeneratedToneHz = 987.77f
+        };
 
         public static string CueFilePath
         {
-            get
-            {
-                string gameRoot = GetGameRoot();
-                return Path.Combine(gameRoot, "UserData", "ADOFAI_Access", "Audio", "tap.wav");
-            }
+            get { return GetCueFilePath(TapCueState.FileName); }
         }
 
         public static void PlayCueNow()
         {
-            EnsureAudioReady();
+            PlayCueNow(TapCueState);
+        }
+
+        public static void PlayCueAt(double dspTime)
+        {
+            PlayCueAt(TapCueState, dspTime);
+        }
+
+        public static void PlayListenStartNow()
+        {
+            PlayListenStartNow(1f);
+        }
+
+        public static void PlayListenStartNow(float playbackRate)
+        {
+            PlayCueNow(ListenStartCueState, playbackRate);
+        }
+
+        public static void PlayListenStartAt(double dspTime)
+        {
+            PlayListenStartAt(dspTime, 1f);
+        }
+
+        public static void PlayListenStartAt(double dspTime, float playbackRate)
+        {
+            PlayCueAt(ListenStartCueState, dspTime, playbackRate);
+        }
+
+        public static void PlayListenEndNow()
+        {
+            PlayListenEndNow(1f);
+        }
+
+        public static void PlayListenEndNow(float playbackRate)
+        {
+            PlayCueNow(ListenEndCueState, playbackRate);
+        }
+
+        public static void PlayListenEndAt(double dspTime)
+        {
+            PlayListenEndAt(dspTime, 1f);
+        }
+
+        public static void PlayListenEndAt(double dspTime, float playbackRate)
+        {
+            PlayCueAt(ListenEndCueState, dspTime, playbackRate);
+        }
+
+        private static void PlayCueNow(CueClipState cueState, float playbackRate = 1f)
+        {
+            EnsureAudioReady(cueState);
             if (_cueSource == null)
             {
                 return;
             }
 
-            AudioClip clip = SelectClip();
+            AudioClip clip = SelectClip(cueState);
+            clip = GetPlaybackClip(cueState, clip, playbackRate);
             if (clip != null)
             {
+                _cueSource.pitch = 1f;
                 _cueSource.PlayOneShot(clip, 1f);
             }
         }
 
-        public static void PlayCueAt(double dspTime)
+        private static void PlayCueAt(CueClipState cueState, double dspTime, float playbackRate = 1f)
         {
-            EnsureAudioReady();
+            EnsureAudioReady(cueState);
 
-            AudioClip clip = SelectClip();
+            AudioClip clip = SelectClip(cueState);
+            clip = GetPlaybackClip(cueState, clip, playbackRate);
             if (clip == null)
             {
                 return;
@@ -70,6 +148,7 @@ namespace ADOFAI_Access
                 return;
             }
 
+            slot.Source.pitch = 1f;
             slot.Source.clip = clip;
             slot.Source.PlayScheduled(dspTime);
         }
@@ -127,33 +206,33 @@ namespace ADOFAI_Access
             return created;
         }
 
-        private static void EnsureAudioReady()
+        private static void EnsureAudioReady(CueClipState cueState)
         {
             EnsureAudioSource();
-            EnsureFallbackClip();
+            EnsureFallbackClip(cueState);
 
-            string cuePath = CueFilePath;
-            if (_cueClip != null && string.Equals(_loadedCuePath, cuePath, StringComparison.OrdinalIgnoreCase))
+            string cuePath = GetCueFilePath(cueState.FileName);
+            if (cueState.CustomClip != null && string.Equals(cueState.LoadedCuePath, cuePath, StringComparison.OrdinalIgnoreCase))
             {
                 return;
             }
 
-            if (_isLoadingCue)
+            if (cueState.IsLoadingCue)
             {
                 return;
             }
 
             if (!File.Exists(cuePath))
             {
-                _cueClip = null;
-                _loadedCuePath = string.Empty;
-                _customCueLoadFailed = false;
+                cueState.CustomClip = null;
+                cueState.LoadedCuePath = string.Empty;
+                cueState.CustomCueLoadFailed = false;
                 return;
             }
 
-            _isLoadingCue = true;
-            _customCueLoadFailed = false;
-            MelonCoroutines.Start(LoadCueClip(cuePath));
+            cueState.IsLoadingCue = true;
+            cueState.CustomCueLoadFailed = false;
+            MelonCoroutines.Start(LoadCueClip(cuePath, cueState));
         }
 
         private static void EnsureAudioSource()
@@ -176,18 +255,18 @@ namespace ADOFAI_Access
             CuePool.Add(CreateCueSourceSlot());
         }
 
-        private static void EnsureFallbackClip()
+        private static void EnsureFallbackClip(CueClipState cueState)
         {
-            if (_fallbackClip != null)
+            if (cueState.FallbackClip != null)
             {
                 return;
             }
 
-            if (!_embeddedCueLoadAttempted)
+            if (!cueState.EmbeddedCueLoadAttempted)
             {
-                _embeddedCueLoadAttempted = true;
-                _fallbackClip = TryLoadEmbeddedCueClip();
-                if (_fallbackClip != null)
+                cueState.EmbeddedCueLoadAttempted = true;
+                cueState.FallbackClip = TryLoadEmbeddedCueClip(cueState);
+                if (cueState.FallbackClip != null)
                 {
                     return;
                 }
@@ -197,7 +276,7 @@ namespace ADOFAI_Access
             const float durationSeconds = 0.045f;
             int sampleCount = Mathf.CeilToInt(sampleRate * durationSeconds);
             float[] samples = new float[sampleCount];
-            float frequency = 1760f;
+            float frequency = cueState.GeneratedToneHz > 0f ? cueState.GeneratedToneHz : 1760f;
             for (int i = 0; i < sampleCount; i++)
             {
                 float t = i / (float)sampleRate;
@@ -205,27 +284,28 @@ namespace ADOFAI_Access
                 samples[i] = Mathf.Sin(2f * Mathf.PI * frequency * t) * envelope * 0.25f;
             }
 
-            _fallbackClip = AudioClip.Create("ADOFAI_Access_DefaultPreviewCue", sampleCount, 1, sampleRate, false);
-            _fallbackClip.SetData(samples, 0);
+            string clipName = string.IsNullOrEmpty(cueState.GeneratedClipName) ? "ADOFAI_Access_DefaultCue" : cueState.GeneratedClipName;
+            cueState.FallbackClip = AudioClip.Create(clipName, sampleCount, 1, sampleRate, false);
+            cueState.FallbackClip.SetData(samples, 0);
         }
 
-        private static AudioClip TryLoadEmbeddedCueClip()
+        private static AudioClip TryLoadEmbeddedCueClip(CueClipState cueState)
         {
             try
             {
                 Assembly assembly = typeof(TapCueService).Assembly;
-                using (Stream stream = assembly.GetManifestResourceStream(EmbeddedCueResourceName))
+                using (Stream stream = assembly.GetManifestResourceStream(cueState.EmbeddedResourceName))
                 {
                     if (stream == null)
                     {
-                        MelonLogger.Warning($"[ADOFAI Access] Embedded tap cue resource not found: {EmbeddedCueResourceName}");
+                        MelonLogger.Warning($"[ADOFAI Access] Embedded cue resource not found: {cueState.EmbeddedResourceName}");
                         return null;
                     }
 
-                    AudioClip clip = CreateAudioClipFromWavStream(stream, "ADOFAI_Access_EmbeddedPreviewCue");
+                    AudioClip clip = CreateAudioClipFromWavStream(stream, cueState.GeneratedClipName + "_Embedded");
                     if (clip == null)
                     {
-                        MelonLogger.Warning("[ADOFAI Access] Embedded tap cue could not be decoded.");
+                        MelonLogger.Warning($"[ADOFAI Access] Embedded cue could not be decoded: {cueState.EmbeddedResourceName}");
                         return null;
                     }
 
@@ -234,7 +314,7 @@ namespace ADOFAI_Access
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"[ADOFAI Access] Failed to load embedded tap cue: {ex}");
+                MelonLogger.Warning($"[ADOFAI Access] Failed to load embedded cue {cueState.EmbeddedResourceName}: {ex}");
                 return null;
             }
         }
@@ -422,7 +502,7 @@ namespace ADOFAI_Access
             return Encoding.ASCII.GetString(bytes, 0, 4);
         }
 
-        private static IEnumerator LoadCueClip(string cuePath)
+        private static IEnumerator LoadCueClip(string cuePath, CueClipState cueState)
         {
             string uri = new Uri(cuePath).AbsoluteUri;
             using (UnityWebRequest request = UnityWebRequestMultimedia.GetAudioClip(uri, AudioType.WAV))
@@ -434,44 +514,269 @@ namespace ADOFAI_Access
                     AudioClip clip = DownloadHandlerAudioClip.GetContent(request);
                     if (clip != null)
                     {
-                        _cueClip = clip;
-                        _loadedCuePath = cuePath;
-                        _customCueLoadFailed = false;
+                        cueState.CustomClip = clip;
+                        cueState.LoadedCuePath = cuePath;
+                        cueState.CustomCueLoadFailed = false;
                     }
                     else
                     {
-                        _cueClip = null;
-                        _loadedCuePath = string.Empty;
-                        _customCueLoadFailed = true;
+                        cueState.CustomClip = null;
+                        cueState.LoadedCuePath = string.Empty;
+                        cueState.CustomCueLoadFailed = true;
                     }
                 }
                 else
                 {
                     MelonLogger.Warning($"[ADOFAI Access] Failed to load tap cue from {cuePath}: {request.error}");
-                    _cueClip = null;
-                    _loadedCuePath = string.Empty;
-                    _customCueLoadFailed = true;
+                    cueState.CustomClip = null;
+                    cueState.LoadedCuePath = string.Empty;
+                    cueState.CustomCueLoadFailed = true;
                 }
             }
 
-            _isLoadingCue = false;
+            cueState.IsLoadingCue = false;
         }
 
-        private static AudioClip SelectClip()
+        private static AudioClip SelectClip(CueClipState cueState)
         {
-            string cuePath = CueFilePath;
-            if (_cueClip != null && string.Equals(_loadedCuePath, cuePath, StringComparison.OrdinalIgnoreCase))
+            string cuePath = GetCueFilePath(cueState.FileName);
+            if (cueState.CustomClip != null && string.Equals(cueState.LoadedCuePath, cuePath, StringComparison.OrdinalIgnoreCase))
             {
-                return _cueClip;
+                return cueState.CustomClip;
             }
 
-            if (File.Exists(cuePath) && !_customCueLoadFailed)
+            if (File.Exists(cuePath) && !cueState.CustomCueLoadFailed)
             {
                 // Custom cue exists; wait until it is loaded instead of playing fallback first.
                 return null;
             }
 
-            return _fallbackClip;
+            return cueState.FallbackClip;
+        }
+
+        private static AudioClip GetPlaybackClip(CueClipState cueState, AudioClip baseClip, float playbackRate)
+        {
+            if (baseClip == null)
+            {
+                return null;
+            }
+
+            float normalizedRate = NormalizePlaybackRate(playbackRate);
+            if (Mathf.Abs(normalizedRate - 1f) < 0.01f)
+            {
+                return baseClip;
+            }
+
+            string key = baseClip.GetInstanceID().ToString() + "|" + normalizedRate.ToString("0.00");
+            if (cueState.TimeScaledClipCache.TryGetValue(key, out AudioClip cached) && cached != null)
+            {
+                return cached;
+            }
+
+            AudioClip scaled = BuildTimeScaledClip(baseClip, normalizedRate, cueState.GeneratedClipName + "_TempoScaled_" + normalizedRate.ToString("0.00"));
+            if (scaled == null)
+            {
+                return baseClip;
+            }
+
+            if (cueState.TimeScaledClipCache.Count >= 64)
+            {
+                cueState.TimeScaledClipCache.Clear();
+            }
+
+            cueState.TimeScaledClipCache[key] = scaled;
+            return scaled;
+        }
+
+        private static AudioClip BuildTimeScaledClip(AudioClip source, float speedRate, string clipName)
+        {
+            try
+            {
+                if (source == null || source.channels <= 0 || source.frequency <= 0 || source.samples <= 0)
+                {
+                    return null;
+                }
+
+                int channels = source.channels;
+                int inputFrames = source.samples;
+                int totalInputSamples = inputFrames * channels;
+                float[] input = new float[totalInputSamples];
+                source.GetData(input, 0);
+
+                if (inputFrames < 256)
+                {
+                    return source;
+                }
+
+                int windowSize = Mathf.Min(1024, inputFrames);
+                int analysisHop = Mathf.Max(64, windowSize / 4);
+                float timeScale = 1f / speedRate; // >1 slower, <1 faster
+                int synthesisHop = Mathf.RoundToInt(analysisHop * timeScale);
+                synthesisHop = Mathf.Clamp(synthesisHop, 32, windowSize - 32);
+                int overlapSize = windowSize - synthesisHop;
+                int searchRadius = Mathf.Max(16, analysisHop / 2);
+
+                int frameCount = 1 + Mathf.Max(0, (inputFrames - windowSize) / analysisHop);
+                int outputFrames = Mathf.Max(windowSize, windowSize + (frameCount - 1) * synthesisHop);
+                int totalOutputSamples = outputFrames * channels;
+                float[] output = new float[totalOutputSamples];
+                float[] weights = new float[outputFrames];
+                float[] window = BuildHannWindow(windowSize);
+
+                // First frame anchors the synthesis timeline.
+                AddWindowedFrame(input, inputFrames, channels, 0, output, outputFrames, 0, window, weights);
+                int previousInStart = 0;
+
+                for (int frame = 1; frame < frameCount; frame++)
+                {
+                    int outStart = frame * synthesisHop;
+                    int targetInStart = previousInStart + analysisHop;
+                    targetInStart = Mathf.Clamp(targetInStart, 0, inputFrames - windowSize);
+                    int inStart = FindBestAlignment(input, output, inputFrames, outputFrames, channels, targetInStart, outStart, overlapSize, searchRadius);
+                    AddWindowedFrame(input, inputFrames, channels, inStart, output, outputFrames, outStart, window, weights);
+                    previousInStart = inStart;
+                }
+
+                for (int frame = 0; frame < outputFrames; frame++)
+                {
+                    float weight = weights[frame];
+                    if (weight <= 0.0001f)
+                    {
+                        continue;
+                    }
+
+                    int frameIndex = frame * channels;
+                    for (int c = 0; c < channels; c++)
+                    {
+                        output[frameIndex + c] /= weight;
+                    }
+                }
+
+                AudioClip result = AudioClip.Create(clipName, outputFrames, channels, source.frequency, false);
+                result.SetData(output, 0);
+                return result;
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[ADOFAI Access] Failed to build tempo-scaled cue clip: {ex}");
+                return null;
+            }
+        }
+
+        private static int FindBestAlignment(
+            float[] input,
+            float[] output,
+            int inputFrames,
+            int outputFrames,
+            int channels,
+            int targetInStart,
+            int outStart,
+            int overlapSize,
+            int searchRadius)
+        {
+            if (overlapSize <= 0)
+            {
+                return Mathf.Clamp(targetInStart, 0, inputFrames - 1);
+            }
+
+            int minStart = Mathf.Max(0, targetInStart - searchRadius);
+            int maxStart = Mathf.Min(inputFrames - overlapSize - 1, targetInStart + searchRadius);
+            int outOverlapStart = outStart;
+            if (outOverlapStart < 0 || outOverlapStart + overlapSize >= outputFrames)
+            {
+                return Mathf.Clamp(targetInStart, minStart, maxStart);
+            }
+
+            float bestScore = float.NegativeInfinity;
+            int bestStart = Mathf.Clamp(targetInStart, minStart, maxStart);
+            for (int candidate = minStart; candidate <= maxStart; candidate++)
+            {
+                float dot = 0f;
+                float energyIn = 0f;
+                float energyOut = 0f;
+
+                for (int n = 0; n < overlapSize; n++)
+                {
+                    int inFrame = candidate + n;
+                    int outFrame = outOverlapStart + n;
+                    int inIndex = inFrame * channels;
+                    int outIndex = outFrame * channels;
+                    for (int c = 0; c < channels; c++)
+                    {
+                        float a = input[inIndex + c];
+                        float b = output[outIndex + c];
+                        dot += a * b;
+                        energyIn += a * a;
+                        energyOut += b * b;
+                    }
+                }
+
+                if (energyIn <= 0.000001f || energyOut <= 0.000001f)
+                {
+                    continue;
+                }
+
+                float score = dot / Mathf.Sqrt(energyIn * energyOut);
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestStart = candidate;
+                }
+            }
+
+            return bestStart;
+        }
+
+        private static void AddWindowedFrame(
+            float[] input,
+            int inputFrames,
+            int channels,
+            int inStart,
+            float[] output,
+            int outputFrames,
+            int outStart,
+            float[] window,
+            float[] weights)
+        {
+            int windowSize = window.Length;
+            for (int n = 0; n < windowSize; n++)
+            {
+                int inFrame = inStart + n;
+                int outFrame = outStart + n;
+                if (inFrame >= inputFrames || outFrame >= outputFrames || outFrame < 0)
+                {
+                    break;
+                }
+
+                float w = window[n];
+                weights[outFrame] += w;
+                int inIndex = inFrame * channels;
+                int outIndex = outFrame * channels;
+                for (int c = 0; c < channels; c++)
+                {
+                    output[outIndex + c] += input[inIndex + c] * w;
+                }
+            }
+        }
+
+        private static float[] BuildHannWindow(int size)
+        {
+            float[] window = new float[size];
+            if (size <= 1)
+            {
+                if (size == 1)
+                {
+                    window[0] = 1f;
+                }
+                return window;
+            }
+
+            for (int i = 0; i < size; i++)
+            {
+                window[i] = 0.5f * (1f - Mathf.Cos((2f * Mathf.PI * i) / (size - 1)));
+            }
+
+            return window;
         }
 
         private static CueSourceSlot CreateCueSourceSlot()
@@ -499,6 +804,32 @@ namespace ADOFAI_Access
             }
 
             return AppDomain.CurrentDomain.BaseDirectory;
+        }
+
+        private static string GetCueFilePath(string fileName)
+        {
+            string gameRoot = GetGameRoot();
+            return Path.Combine(gameRoot, "UserData", "ADOFAI_Access", "Audio", fileName);
+        }
+
+        private static float NormalizePlaybackRate(float playbackRate)
+        {
+            if (playbackRate <= 0f || float.IsNaN(playbackRate) || float.IsInfinity(playbackRate))
+            {
+                return 1f;
+            }
+
+            if (playbackRate < 0.5f)
+            {
+                return 0.5f;
+            }
+
+            if (playbackRate > 2f)
+            {
+                return 2f;
+            }
+
+            return playbackRate;
         }
     }
 }

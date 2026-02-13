@@ -439,6 +439,12 @@
 		<EmbeddedResource Include="Audio\tap.wav">
 			<LogicalName>ADOFAI_Access.Audio.tap.wav</LogicalName>
 		</EmbeddedResource>
+		<EmbeddedResource Include="Audio\listen_start.wav">
+			<LogicalName>ADOFAI_Access.Audio.listen_start.wav</LogicalName>
+		</EmbeddedResource>
+		<EmbeddedResource Include="Audio\listen_end.wav">
+			<LogicalName>ADOFAI_Access.Audio.listen_end.wav</LogicalName>
+		</EmbeddedResource>
 	</ItemGroup>
 	
 	<Target Name="PostBuild" AfterTargets="PostBuildEvent">

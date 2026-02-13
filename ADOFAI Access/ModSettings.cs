@@ -13,11 +13,21 @@ namespace ADOFAI_Access
         ListenRepeat = 2
     }
 
+    internal enum ListenRepeatStartEndCueMode
+    {
+        None = 0,
+        Speech = 1,
+        Sound = 2,
+        Both = 3
+    }
+
     internal sealed class ModSettingsData
     {
         public bool menuNarrationEnabled = true;
         public PlayMode playMode = PlayMode.Vanilla;
         public int patternPreviewBeatsAhead = 4;
+        public bool listenRepeatAudioDuckingEnabled = true;
+        public ListenRepeatStartEndCueMode listenRepeatStartEndCueMode = ListenRepeatStartEndCueMode.Sound;
     }
 
     internal static class ModSettings
@@ -111,6 +121,11 @@ namespace ADOFAI_Access
             if (!Enum.IsDefined(typeof(PlayMode), _current.playMode))
             {
                 _current.playMode = PlayMode.Vanilla;
+            }
+
+            if (!Enum.IsDefined(typeof(ListenRepeatStartEndCueMode), _current.listenRepeatStartEndCueMode))
+            {
+                _current.listenRepeatStartEndCueMode = ListenRepeatStartEndCueMode.Sound;
             }
         }
 

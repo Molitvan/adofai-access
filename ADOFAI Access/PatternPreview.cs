@@ -10,6 +10,8 @@ namespace ADOFAI_Access
         private const KeyCode ToggleKey = KeyCode.F9;
         private const double CueScheduleHorizonSeconds = 0.25;
         private const double CueLateGraceSeconds = 0.04;
+        private const float ListenBoundarySourceBpm = 128f;
+        private const float ListenPhaseDuckFactor = 0.35f;
 
         private static bool _toggleHintSpoken;
         private static bool _runtimeModeActive;
@@ -17,7 +19,10 @@ namespace ADOFAI_Access
         private static bool _hasStoredPreviousAuto;
         private static bool _previousAuto;
         private static int _listenRepeatPhase = -1; // 0 = Listen, 1 = Repeat
+        private static bool _isListenDuckingActive;
+        private static float _preDuckSongVolume = 1f;
         private static readonly HashSet<int> HandledSeqIds = new HashSet<int>();
+        private static readonly HashSet<string> HandledListenBoundaryCueKeys = new HashSet<string>();
 
         public static bool IsActive => ModSettings.Current.playMode != PlayMode.Vanilla;
         public static PlayMode CurrentMode => ModSettings.Current.playMode;
@@ -77,6 +82,7 @@ namespace ADOFAI_Access
                 if (_runtimeMode == PlayMode.ListenRepeat)
                 {
                     RestoreAuto();
+                    ApplyListenDucking(ADOBase.conductor, shouldDuck: false);
                 }
                 return;
             }
@@ -85,6 +91,7 @@ namespace ADOFAI_Access
             {
                 case PlayMode.PatternPreview:
                     RestoreAuto();
+                    ApplyListenDucking(ADOBase.conductor, shouldDuck: false);
                     TryScheduleNextBarCues();
                     break;
                 case PlayMode.ListenRepeat:
@@ -195,6 +202,7 @@ namespace ADOFAI_Access
             }
 
             RestoreAuto();
+            ApplyListenDucking(ADOBase.conductor, shouldDuck: false);
             TapCueService.StopAllCues();
             _runtimeMode = mode;
             _listenRepeatPhase = -1;
@@ -212,6 +220,7 @@ namespace ADOFAI_Access
             _runtimeModeActive = false;
             TapCueService.StopAllCues();
             RestoreAuto();
+            ApplyListenDucking(ADOBase.conductor, shouldDuck: false);
             _runtimeMode = PlayMode.Vanilla;
             _listenRepeatPhase = -1;
             ResetSchedulingState();
@@ -227,6 +236,35 @@ namespace ADOFAI_Access
             RDC.auto = _previousAuto;
         }
 
+        private static void ApplyListenDucking(scrConductor conductor, bool shouldDuck)
+        {
+            shouldDuck = shouldDuck && ModSettings.Current.listenRepeatAudioDuckingEnabled;
+
+            if (conductor == null || conductor.song == null)
+            {
+                _isListenDuckingActive = false;
+                return;
+            }
+
+            if (shouldDuck)
+            {
+                if (!_isListenDuckingActive)
+                {
+                    _preDuckSongVolume = conductor.song.volume;
+                    _isListenDuckingActive = true;
+                }
+
+                conductor.song.volume = Mathf.Clamp01(_preDuckSongVolume * ListenPhaseDuckFactor);
+                return;
+            }
+
+            if (_isListenDuckingActive)
+            {
+                conductor.song.volume = Mathf.Clamp01(_preDuckSongVolume);
+                _isListenDuckingActive = false;
+            }
+        }
+
         private static void TickListenRepeat(scrController controller)
         {
             scrConductor conductor = ADOBase.conductor;
@@ -239,16 +277,19 @@ namespace ADOFAI_Access
             {
                 // Do not emit listen-repeat cues during countdown/checkpoint phases.
                 TapCueService.StopAllCues();
+                ApplyListenDucking(conductor, shouldDuck: false);
                 return;
             }
 
             if (!TryGetCurrentBeat(controller, conductor, out double currentBeat))
             {
+                ApplyListenDucking(conductor, shouldDuck: false);
                 return;
             }
 
             int beatsPerGroup = Math.Max(1, ModSettings.Current.patternPreviewBeatsAhead);
             int groupIndex = Mathf.FloorToInt((float)(currentBeat / beatsPerGroup));
+            TryScheduleListenBoundaryCues(conductor, beatsPerGroup, groupIndex);
             int phase = (groupIndex & 1) == 0 ? 0 : 1;
             bool phaseChanged = phase != _listenRepeatPhase;
             if (phaseChanged)
@@ -256,17 +297,100 @@ namespace ADOFAI_Access
                 _listenRepeatPhase = phase;
                 ResetSchedulingState();
                 TapCueService.StopAllCues();
-                MenuNarration.Speak(phase == 0 ? "Listen" : "Repeat", interrupt: true);
+                ListenRepeatStartEndCueMode cueMode = ModSettings.Current.listenRepeatStartEndCueMode;
+                bool useSpeech = cueMode == ListenRepeatStartEndCueMode.Speech || cueMode == ListenRepeatStartEndCueMode.Both;
+                if (useSpeech)
+                {
+                    MenuNarration.Speak(phase == 0 ? "Listen" : "Repeat", interrupt: true);
+                }
             }
 
             if (phase == 0)
             {
                 RDC.auto = true;
+                ApplyListenDucking(conductor, shouldDuck: true);
                 TryScheduleListenRepeatGroupCues(conductor, groupIndex, beatsPerGroup);
                 return;
             }
 
             RDC.auto = false;
+            ApplyListenDucking(conductor, shouldDuck: false);
+        }
+
+        private static void TryScheduleListenBoundaryCues(scrConductor conductor, int beatsPerGroup, int currentGroupIndex)
+        {
+            scrLevelMaker levelMaker = ADOBase.lm;
+            if (conductor == null || levelMaker == null || levelMaker.listFloors == null || beatsPerGroup <= 0)
+            {
+                return;
+            }
+
+            List<scrFloor> floors = levelMaker.listFloors;
+            int minGroup = currentGroupIndex - 2;
+            int maxGroup = currentGroupIndex + 2;
+            for (int groupIndex = minGroup; groupIndex <= maxGroup; groupIndex++)
+            {
+                if ((groupIndex & 1) != 0)
+                {
+                    continue;
+                }
+
+                double listenStartBeat = groupIndex * (double)beatsPerGroup;
+                double listenEndBeat = listenStartBeat + beatsPerGroup;
+                TryScheduleListenBoundaryCue(conductor, floors, groupIndex, "start", listenStartBeat - 1d, TapCueService.PlayListenStartAt, TapCueService.PlayListenStartNow);
+                TryScheduleListenBoundaryCue(conductor, floors, groupIndex, "end", listenEndBeat - 1d, TapCueService.PlayListenEndAt, TapCueService.PlayListenEndNow);
+            }
+        }
+
+        private static void TryScheduleListenBoundaryCue(
+            scrConductor conductor,
+            List<scrFloor> floors,
+            int listenGroupIndex,
+            string markerType,
+            double markerBeat,
+            Action<double, float> scheduleAction,
+            Action<float> immediateAction)
+        {
+            string key = listenGroupIndex.ToString() + ":" + markerType;
+            if (HandledListenBoundaryCueKeys.Contains(key))
+            {
+                return;
+            }
+
+            if (!TryGetCueDspForBeat(conductor, floors, markerBeat, out double dueDsp))
+            {
+                return;
+            }
+
+            double untilDue = dueDsp - conductor.dspTime;
+            if (untilDue < -CueLateGraceSeconds)
+            {
+                HandledListenBoundaryCueKeys.Add(key);
+                return;
+            }
+
+            if (untilDue > CueScheduleHorizonSeconds)
+            {
+                return;
+            }
+
+            float playbackRate = GetListenBoundaryPlaybackRate(conductor, floors, markerBeat);
+            ListenRepeatStartEndCueMode cueMode = ModSettings.Current.listenRepeatStartEndCueMode;
+            bool useSound = cueMode == ListenRepeatStartEndCueMode.Sound || cueMode == ListenRepeatStartEndCueMode.Both;
+
+            HandledListenBoundaryCueKeys.Add(key);
+            if (useSound)
+            {
+                if (untilDue >= 0.0)
+                {
+                    scheduleAction(dueDsp, playbackRate);
+                }
+                else
+                {
+                    immediateAction(playbackRate);
+                }
+            }
+
         }
 
         private static void TryScheduleListenRepeatGroupCues(scrConductor conductor, int listenGroupIndex, int beatsPerGroup)
@@ -495,6 +619,119 @@ namespace ADOFAI_Access
             return true;
         }
 
+        private static bool TryGetCueDspForBeat(scrConductor conductor, List<scrFloor> floors, double beat, out double cueDsp)
+        {
+            cueDsp = 0d;
+            if (conductor == null)
+            {
+                return false;
+            }
+
+            if (TryGetEntryTimePitchAdjustedForBeat(floors, beat, out double entryTimePitchAdj))
+            {
+                cueDsp = conductor.dspTimeSongPosZero + entryTimePitchAdj;
+                return true;
+            }
+
+            float pitch = conductor.song != null && conductor.song.pitch > 0f ? conductor.song.pitch : 1f;
+            cueDsp = conductor.dspTimeSongPosZero + (conductor.crotchetAtStart * beat / pitch);
+            return true;
+        }
+
+        private static float GetListenBoundaryPlaybackRate(scrConductor conductor, List<scrFloor> floors, double beat)
+        {
+            float bpm = TryGetEffectiveBpmAtBeat(conductor, floors, beat, out float effectiveBpm) ? effectiveBpm : GetFallbackEffectiveBpm(conductor);
+            if (bpm <= 0f)
+            {
+                return 1f;
+            }
+
+            return bpm / ListenBoundarySourceBpm;
+        }
+
+        private static bool TryGetEffectiveBpmAtBeat(scrConductor conductor, List<scrFloor> floors, double beat, out float bpm)
+        {
+            bpm = 0f;
+            if (floors == null || floors.Count < 2)
+            {
+                return false;
+            }
+
+            scrFloor firstA = null;
+            scrFloor firstB = null;
+            scrFloor lastA = null;
+            scrFloor lastB = null;
+
+            for (int i = 1; i < floors.Count; i++)
+            {
+                scrFloor a = floors[i - 1];
+                scrFloor b = floors[i];
+                if (a == null || b == null || b.entryBeat <= a.entryBeat)
+                {
+                    continue;
+                }
+
+                if (firstA == null)
+                {
+                    firstA = a;
+                    firstB = b;
+                }
+
+                lastA = a;
+                lastB = b;
+
+                if (beat < a.entryBeat || beat > b.entryBeat)
+                {
+                    continue;
+                }
+
+                return TryComputeBpmFromSegment(a, b, out bpm);
+            }
+
+            if (firstA != null && firstB != null && beat < firstA.entryBeat)
+            {
+                return TryComputeBpmFromSegment(firstA, firstB, out bpm);
+            }
+
+            if (lastA != null && lastB != null && beat > lastB.entryBeat)
+            {
+                return TryComputeBpmFromSegment(lastA, lastB, out bpm);
+            }
+
+            return false;
+        }
+
+        private static bool TryComputeBpmFromSegment(scrFloor a, scrFloor b, out float bpm)
+        {
+            bpm = 0f;
+            if (a == null || b == null)
+            {
+                return false;
+            }
+
+            double deltaBeat = b.entryBeat - a.entryBeat;
+            double deltaTime = b.entryTimePitchAdj - a.entryTimePitchAdj;
+            if (deltaBeat <= 0.0001 || deltaTime <= 0.0001)
+            {
+                return false;
+            }
+
+            bpm = (float)(60.0 * deltaBeat / deltaTime);
+            return bpm > 0f;
+        }
+
+        private static float GetFallbackEffectiveBpm(scrConductor conductor)
+        {
+            if (conductor == null)
+            {
+                return 128f;
+            }
+
+            float pitch = conductor.song != null && conductor.song.pitch > 0f ? conductor.song.pitch : 1f;
+            float bpm = conductor.bpm > 0f ? conductor.bpm * pitch : 0f;
+            return bpm > 0f ? bpm : 128f;
+        }
+
         private static bool TryGetEntryTimePitchAdjustedForBeat(List<scrFloor> floors, double beat, out double entryTimePitchAdj)
         {
             entryTimePitchAdj = 0d;
@@ -571,6 +808,7 @@ namespace ADOFAI_Access
         private static void ResetSchedulingState()
         {
             HandledSeqIds.Clear();
+            HandledListenBoundaryCueKeys.Clear();
         }
     }
 }

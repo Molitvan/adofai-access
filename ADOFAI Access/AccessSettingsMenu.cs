@@ -6,6 +6,7 @@ namespace ADOFAI_Access
     internal static class AccessSettingsMenu
     {
         private const KeyCode ToggleKey = KeyCode.F5;
+        private const int OptionCount = 5;
 
         private static bool _open;
         private static int _selectedIndex;
@@ -44,14 +45,14 @@ namespace ADOFAI_Access
 
             if (Input.GetKeyDown(KeyCode.UpArrow))
             {
-                _selectedIndex = (_selectedIndex + 2) % 3;
+                _selectedIndex = (_selectedIndex + OptionCount - 1) % OptionCount;
                 SpeakCurrentOption();
                 return;
             }
 
             if (Input.GetKeyDown(KeyCode.DownArrow))
             {
-                _selectedIndex = (_selectedIndex + 1) % 3;
+                _selectedIndex = (_selectedIndex + 1) % OptionCount;
                 SpeakCurrentOption();
                 return;
             }
@@ -150,6 +151,12 @@ namespace ADOFAI_Access
                         settings.patternPreviewBeatsAhead = 16;
                     }
                     break;
+                case 3:
+                    settings.listenRepeatAudioDuckingEnabled = delta > 0;
+                    break;
+                case 4:
+                    settings.listenRepeatStartEndCueMode = GetNextCueMode(settings.listenRepeatStartEndCueMode, delta);
+                    break;
             }
 
             ModSettings.Save();
@@ -177,6 +184,12 @@ namespace ADOFAI_Access
                 case 2:
                     settings.patternPreviewBeatsAhead = settings.patternPreviewBeatsAhead >= 16 ? 1 : settings.patternPreviewBeatsAhead + 1;
                     break;
+                case 3:
+                    settings.listenRepeatAudioDuckingEnabled = !settings.listenRepeatAudioDuckingEnabled;
+                    break;
+                case 4:
+                    settings.listenRepeatStartEndCueMode = GetNextCueMode(settings.listenRepeatStartEndCueMode, 1);
+                    break;
             }
 
             ModSettings.Save();
@@ -196,13 +209,19 @@ namespace ADOFAI_Access
             switch (_selectedIndex)
             {
                 case 0:
-                    MenuNarration.Speak($"Menu narration, {(settings.menuNarrationEnabled ? "on" : "off")}, toggle, 1 of 3", interrupt: true);
+                    MenuNarration.Speak($"Menu narration, {(settings.menuNarrationEnabled ? "on" : "off")}, toggle, 1 of 5", interrupt: true);
                     break;
                 case 1:
-                    MenuNarration.Speak($"Play mode, {PatternPreview.GetModeLabel(settings.playMode)}, option, 2 of 3", interrupt: true);
+                    MenuNarration.Speak($"Play mode, {PatternPreview.GetModeLabel(settings.playMode)}, option, 2 of 5", interrupt: true);
                     break;
                 case 2:
-                    MenuNarration.Speak($"Pattern preview beats ahead, {settings.patternPreviewBeatsAhead}, setting, 3 of 3", interrupt: true);
+                    MenuNarration.Speak($"Pattern preview beats ahead, {settings.patternPreviewBeatsAhead}, setting, 3 of 5", interrupt: true);
+                    break;
+                case 3:
+                    MenuNarration.Speak($"Listen-repeat ducking, {(settings.listenRepeatAudioDuckingEnabled ? "on" : "off")}, toggle, 4 of 5", interrupt: true);
+                    break;
+                case 4:
+                    MenuNarration.Speak($"Listen-repeat start/end cue, {GetCueModeLabel(settings.listenRepeatStartEndCueMode)}, option, 5 of 5", interrupt: true);
                     break;
             }
         }
@@ -221,6 +240,65 @@ namespace ADOFAI_Access
                 case 2:
                     SpeakAlways(settings.patternPreviewBeatsAhead.ToString(), true);
                     break;
+                case 3:
+                    SpeakAlways(settings.listenRepeatAudioDuckingEnabled ? "on" : "off", true);
+                    break;
+                case 4:
+                    SpeakAlways(GetCueModeLabel(settings.listenRepeatStartEndCueMode), true);
+                    break;
+            }
+        }
+
+        private static ListenRepeatStartEndCueMode GetNextCueMode(ListenRepeatStartEndCueMode current, int delta)
+        {
+            ListenRepeatStartEndCueMode[] cycle = new[]
+            {
+                ListenRepeatStartEndCueMode.Sound,
+                ListenRepeatStartEndCueMode.Speech,
+                ListenRepeatStartEndCueMode.Both,
+                ListenRepeatStartEndCueMode.None
+            };
+
+            int index = 0;
+            for (int i = 0; i < cycle.Length; i++)
+            {
+                if (cycle[i] == current)
+                {
+                    index = i;
+                    break;
+                }
+            }
+
+            if (delta == 0)
+            {
+                return cycle[index];
+            }
+
+            int next = index + (delta > 0 ? 1 : -1);
+            if (next < 0)
+            {
+                next = cycle.Length - 1;
+            }
+            else if (next >= cycle.Length)
+            {
+                next = 0;
+            }
+
+            return cycle[next];
+        }
+
+        private static string GetCueModeLabel(ListenRepeatStartEndCueMode mode)
+        {
+            switch (mode)
+            {
+                case ListenRepeatStartEndCueMode.Speech:
+                    return "speech";
+                case ListenRepeatStartEndCueMode.Both:
+                    return "both";
+                case ListenRepeatStartEndCueMode.None:
+                    return "none";
+                default:
+                    return "sound";
             }
         }
 
