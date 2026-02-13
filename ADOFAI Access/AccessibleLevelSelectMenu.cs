@@ -73,6 +73,7 @@ namespace ADOFAI_Access
 
             if (Input.GetKeyDown(KeyCode.Escape))
             {
+                CustomMenuInputGuard.SuppressPauseForFrames();
                 Close(speak: true);
                 return;
             }
