@@ -26,7 +26,19 @@ namespace ADOFAI_Access
         private static bool _clsLeftPanelOpen;
         private static bool _clsRightPanelOpen;
         private static string _lastClsDisplayedTitle = string.Empty;
+        private static string _lastClsFocusedOptionKey = string.Empty;
         private static bool _wasInClsScene;
+        private static ClsLeftSection _lastClsLeftSection = ClsLeftSection.None;
+        private static bool _lastClsSearchFocused;
+        private static string _lastClsSearchText = string.Empty;
+
+        private enum ClsLeftSection
+        {
+            None = 0,
+            Search = 1,
+            SortBy = 2,
+            Other = 3
+        }
 
         public static void Tick()
         {
@@ -89,6 +101,10 @@ namespace ADOFAI_Access
                 _clsLeftPanelOpen = false;
                 _clsRightPanelOpen = false;
                 _lastClsDisplayedTitle = string.Empty;
+                _lastClsFocusedOptionKey = string.Empty;
+                _lastClsLeftSection = ClsLeftSection.None;
+                _lastClsSearchFocused = false;
+                _lastClsSearchText = string.Empty;
                 return;
             }
 
@@ -114,9 +130,22 @@ namespace ADOFAI_Access
                     _clsRightPanelOpen = rightOpen;
                     SpeakCustomLevelsPanel(left: false, show: rightOpen);
                 }
+
+                HandleClsSearchNarration(cls.optionsPanels);
+                HandleClsPanelFocusNarration(cls.optionsPanels);
             }
 
             string title = cls.portalName != null ? NormalizeText(cls.portalName.text) : string.Empty;
+            bool suppressLevelAnnouncement = cls.optionsPanels != null && (cls.optionsPanels.searchMode || cls.optionsPanels.showingLeftPanel);
+            if (suppressLevelAnnouncement)
+            {
+                if (!string.IsNullOrEmpty(title))
+                {
+                    _lastClsDisplayedTitle = title;
+                }
+                return;
+            }
+
             if (string.IsNullOrEmpty(title) || string.Equals(title, _lastClsDisplayedTitle, StringComparison.OrdinalIgnoreCase))
             {
                 return;
@@ -127,6 +156,143 @@ namespace ADOFAI_Access
             bool unavailable = cls.levelDeleted;
             string valueState = unavailable ? "unavailable" : (string.IsNullOrEmpty(artist) ? string.Empty : "by " + artist);
             Speak(ComposePhrase(title, "level", valueState), interrupt: true);
+        }
+
+        private static void HandleClsPanelFocusNarration(OptionsPanelsCLS panel)
+        {
+            if (panel == null)
+            {
+                _lastClsFocusedOptionKey = string.Empty;
+                _lastClsLeftSection = ClsLeftSection.None;
+                return;
+            }
+
+            bool leftOpen = panel.showingLeftPanel;
+            bool rightOpen = panel.showingRightPanel;
+            if (!leftOpen && !rightOpen)
+            {
+                _lastClsFocusedOptionKey = string.Empty;
+                _lastClsLeftSection = ClsLeftSection.None;
+                return;
+            }
+
+            if (panel.searchMode && panel.searchInputField != null && panel.searchInputField.isFocused)
+            {
+                return;
+            }
+
+            OptionsPanelsCLS.Option[] options = leftOpen ? panel.leftPanelOptions : panel.rightPanelOptions;
+            if (options == null)
+            {
+                return;
+            }
+
+            OptionsPanelsCLS.Option focused = null;
+            for (int i = 0; i < options.Length; i++)
+            {
+                OptionsPanelsCLS.Option option = options[i];
+                if (option != null && option.highlighted)
+                {
+                    focused = option;
+                    break;
+                }
+            }
+
+            if (focused == null)
+            {
+                return;
+            }
+
+            if (leftOpen)
+            {
+                ClsLeftSection section = GetClsLeftSection(focused.name);
+                if (section != _lastClsLeftSection)
+                {
+                    _lastClsLeftSection = section;
+                    if (section == ClsLeftSection.Search)
+                    {
+                        Speak("Search section", interrupt: true);
+                    }
+                    else if (section == ClsLeftSection.SortBy)
+                    {
+                        Speak("Sort by section", interrupt: true);
+                    }
+                }
+            }
+            else
+            {
+                _lastClsLeftSection = ClsLeftSection.None;
+            }
+
+            string side = leftOpen ? "L" : "R";
+            string key = side + ":" + focused.name;
+            if (string.Equals(key, _lastClsFocusedOptionKey, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _lastClsFocusedOptionKey = key;
+            SpeakClsOption(focused);
+        }
+
+        private static void HandleClsSearchNarration(OptionsPanelsCLS panel)
+        {
+            if (panel == null || panel.searchInputField == null)
+            {
+                _lastClsSearchFocused = false;
+                _lastClsSearchText = string.Empty;
+                return;
+            }
+
+            if (!panel.searchMode)
+            {
+                _lastClsSearchFocused = false;
+                _lastClsSearchText = string.Empty;
+                return;
+            }
+
+            InputField field = panel.searchInputField;
+            bool focused = field.isFocused;
+            string text = NormalizeText(field.text);
+
+            if (focused && !_lastClsSearchFocused)
+            {
+                string valueState = string.IsNullOrEmpty(text) ? "empty" : text;
+                Speak(ComposePhrase("Find", "text field", valueState), interrupt: true);
+            }
+            else if (!focused && _lastClsSearchFocused)
+            {
+                if (string.IsNullOrEmpty(text))
+                {
+                    Speak("Search cleared", interrupt: true);
+                }
+                else if (!string.Equals(text, _lastClsSearchText, StringComparison.OrdinalIgnoreCase))
+                {
+                    Speak("Search " + text, interrupt: true);
+                }
+            }
+
+            _lastClsSearchFocused = focused;
+            _lastClsSearchText = text;
+        }
+
+        private static ClsLeftSection GetClsLeftSection(OptionsPanelsCLS.OptionName option)
+        {
+            if (option == OptionsPanelsCLS.OptionName.Find)
+            {
+                return ClsLeftSection.Search;
+            }
+
+            if (option == OptionsPanelsCLS.OptionName.Difficulty ||
+                option == OptionsPanelsCLS.OptionName.LastPlayed ||
+                option == OptionsPanelsCLS.OptionName.Song ||
+                option == OptionsPanelsCLS.OptionName.Artist ||
+                option == OptionsPanelsCLS.OptionName.Author)
+            {
+                return ClsLeftSection.SortBy;
+            }
+
+            return ClsLeftSection.Other;
         }
 
         public static void SpeakFocusedButton(GeneralPauseButton button)
@@ -432,8 +598,43 @@ namespace ADOFAI_Access
             }
 
             string label = BestOf(option.text != null ? option.text.text : null, HumanizeIdentifier(option.name.ToString()));
-            string valueState = option.selected ? "on" : string.Empty;
-            Speak(ComposePhrase(label, "option", valueState), interrupt: true);
+            string valueState = string.Empty;
+            string controlType = "option";
+            switch (option.name)
+            {
+                case OptionsPanelsCLS.OptionName.Find:
+                    label = "Find";
+                    controlType = "text field";
+                    string searchText = ADOBase.cls != null && ADOBase.cls.optionsPanels != null && ADOBase.cls.optionsPanels.searchInputField != null
+                        ? NormalizeText(ADOBase.cls.optionsPanels.searchInputField.text)
+                        : string.Empty;
+                    valueState = string.IsNullOrEmpty(searchText) ? "empty" : searchText;
+                    break;
+                case OptionsPanelsCLS.OptionName.Difficulty:
+                case OptionsPanelsCLS.OptionName.LastPlayed:
+                case OptionsPanelsCLS.OptionName.Song:
+                case OptionsPanelsCLS.OptionName.Artist:
+                case OptionsPanelsCLS.OptionName.Author:
+                    controlType = "radio button";
+                    valueState = option.selected ? "selected" : string.Empty;
+                    break;
+                case OptionsPanelsCLS.OptionName.SpeedTrial:
+                case OptionsPanelsCLS.OptionName.NoFail:
+                case OptionsPanelsCLS.OptionName.UnlockKeyLimiter:
+                    controlType = "toggle";
+                    valueState = option.selected ? "on" : "off";
+                    break;
+                case OptionsPanelsCLS.OptionName.Delete:
+                    controlType = "button";
+                    valueState = string.Empty;
+                    break;
+                default:
+                    controlType = "option";
+                    valueState = option.selected ? "on" : string.Empty;
+                    break;
+            }
+
+            Speak(ComposePhrase(label, controlType, valueState), interrupt: true);
         }
 
         private static bool TryDescribeSelected(GameObject selected, out string label, out string controlType, out string valueState)
@@ -950,6 +1151,11 @@ namespace ADOFAI_Access
     {
         private static void Postfix(OptionsPanelsCLS __instance, int option)
         {
+            if (ADOBase.sceneName == GCNS.sceneCustomLevelSelect && ADOBase.cls != null)
+            {
+                return;
+            }
+
             MenuNarration.SpeakClsOptionByIndex(__instance, option);
         }
     }
@@ -959,6 +1165,11 @@ namespace ADOFAI_Access
     {
         private static void Postfix(OptionsPanelsCLS __instance, OptionsPanelsCLS.OptionName name, bool leftOptions)
         {
+            if (ADOBase.sceneName == GCNS.sceneCustomLevelSelect && ADOBase.cls != null)
+            {
+                return;
+            }
+
             MenuNarration.SpeakClsOptionByName(__instance, name, leftOptions);
         }
     }
@@ -968,6 +1179,11 @@ namespace ADOFAI_Access
     {
         private static void Postfix(bool left, bool show)
         {
+            if (ADOBase.sceneName == GCNS.sceneCustomLevelSelect && ADOBase.cls != null)
+            {
+                return;
+            }
+
             MenuNarration.SpeakCustomLevelsPanel(left, show);
         }
     }
