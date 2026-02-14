@@ -23,6 +23,10 @@ namespace ADOFAI_Access
         private static float _lastLevelStartAt;
         private static float _lastLevelEndAt;
         private static float _lastDeathAt;
+        private static bool _clsLeftPanelOpen;
+        private static bool _clsRightPanelOpen;
+        private static string _lastClsDisplayedTitle = string.Empty;
+        private static bool _wasInClsScene;
 
         public static void Tick()
         {
@@ -44,6 +48,8 @@ namespace ADOFAI_Access
             {
                 return;
             }
+
+            HandleCustomLevelsFallbackNarration();
 
             EventSystem eventSystem = EventSystem.current;
             if (eventSystem == null)
@@ -72,6 +78,55 @@ namespace ADOFAI_Access
             }
 
             Speak(ComposePhrase(label, controlType, valueState), interrupt: true);
+        }
+
+        private static void HandleCustomLevelsFallbackNarration()
+        {
+            bool inCls = ADOBase.sceneName == GCNS.sceneCustomLevelSelect && ADOBase.cls != null;
+            if (!inCls)
+            {
+                _wasInClsScene = false;
+                _clsLeftPanelOpen = false;
+                _clsRightPanelOpen = false;
+                _lastClsDisplayedTitle = string.Empty;
+                return;
+            }
+
+            scnCLS cls = ADOBase.cls;
+            if (!_wasInClsScene)
+            {
+                _wasInClsScene = true;
+                Speak("Custom levels", interrupt: true);
+            }
+
+            if (cls.optionsPanels != null)
+            {
+                bool leftOpen = cls.optionsPanels.showingLeftPanel;
+                bool rightOpen = cls.optionsPanels.showingRightPanel;
+                if (leftOpen != _clsLeftPanelOpen)
+                {
+                    _clsLeftPanelOpen = leftOpen;
+                    SpeakCustomLevelsPanel(left: true, show: leftOpen);
+                }
+
+                if (rightOpen != _clsRightPanelOpen)
+                {
+                    _clsRightPanelOpen = rightOpen;
+                    SpeakCustomLevelsPanel(left: false, show: rightOpen);
+                }
+            }
+
+            string title = cls.portalName != null ? NormalizeText(cls.portalName.text) : string.Empty;
+            if (string.IsNullOrEmpty(title) || string.Equals(title, _lastClsDisplayedTitle, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            _lastClsDisplayedTitle = title;
+            string artist = cls.portalArtist != null ? NormalizeText(cls.portalArtist.text) : string.Empty;
+            bool unavailable = cls.levelDeleted;
+            string valueState = unavailable ? "unavailable" : (string.IsNullOrEmpty(artist) ? string.Empty : "by " + artist);
+            Speak(ComposePhrase(title, "level", valueState), interrupt: true);
         }
 
         public static void SpeakFocusedButton(GeneralPauseButton button)
@@ -300,6 +355,85 @@ namespace ADOFAI_Access
             }
 
             SpeakCalibrationMessage(calibration);
+        }
+
+        public static void SpeakCustomLevelSelection(scnCLS scene, CustomLevelTile tile)
+        {
+            if (AccessSettingsMenu.IsOpen || !ModSettings.Current.menuNarrationEnabled || ADOBase.isLevelEditor || scene == null || tile == null)
+            {
+                return;
+            }
+
+            string title = BestOf(tile.title != null ? tile.title.text : null, tile.levelKey, "Custom level");
+            string artist = BestOf(tile.artist != null ? tile.artist.text : null, string.Empty);
+            bool unavailable = tile.removedText != null && tile.removedText.gameObject.activeInHierarchy;
+            string controlType = "level";
+            string valueState = unavailable ? "unavailable" : (string.IsNullOrEmpty(artist) ? string.Empty : "by " + artist);
+            Speak(ComposePhrase(title, controlType, valueState), interrupt: true);
+        }
+
+        public static void SpeakClsOptionByIndex(OptionsPanelsCLS panel, int optionIndex)
+        {
+            if (AccessSettingsMenu.IsOpen || !ModSettings.Current.menuNarrationEnabled || ADOBase.isLevelEditor || panel == null)
+            {
+                return;
+            }
+
+            OptionsPanelsCLS.Option[] options = panel.showingLeftPanel ? panel.leftPanelOptions : panel.rightPanelOptions;
+            if (options == null || optionIndex < 0 || optionIndex >= options.Length)
+            {
+                return;
+            }
+
+            SpeakClsOption(options[optionIndex]);
+        }
+
+        public static void SpeakClsOptionByName(OptionsPanelsCLS panel, OptionsPanelsCLS.OptionName name, bool leftOptions)
+        {
+            if (AccessSettingsMenu.IsOpen || !ModSettings.Current.menuNarrationEnabled || ADOBase.isLevelEditor || panel == null)
+            {
+                return;
+            }
+
+            OptionsPanelsCLS.Option[] options = leftOptions ? panel.leftPanelOptions : panel.rightPanelOptions;
+            if (options == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < options.Length; i++)
+            {
+                OptionsPanelsCLS.Option option = options[i];
+                if (option != null && option.name == name)
+                {
+                    SpeakClsOption(option);
+                    break;
+                }
+            }
+        }
+
+        public static void SpeakCustomLevelsPanel(bool left, bool show)
+        {
+            if (AccessSettingsMenu.IsOpen || !ModSettings.Current.menuNarrationEnabled || ADOBase.isLevelEditor)
+            {
+                return;
+            }
+
+            string side = left ? "Left panel" : "Right panel";
+            string state = show ? "open" : "closed";
+            Speak($"{side}, {state}", interrupt: true);
+        }
+
+        private static void SpeakClsOption(OptionsPanelsCLS.Option option)
+        {
+            if (option == null)
+            {
+                return;
+            }
+
+            string label = BestOf(option.text != null ? option.text.text : null, HumanizeIdentifier(option.name.ToString()));
+            string valueState = option.selected ? "on" : string.Empty;
+            Speak(ComposePhrase(label, "option", valueState), interrupt: true);
         }
 
         private static bool TryDescribeSelected(GameObject selected, out string label, out string controlType, out string valueState)
@@ -540,6 +674,16 @@ namespace ADOFAI_Access
 
             string stripped = RichTextRegex.Replace(text, string.Empty).Trim();
             return WhitespaceRegex.Replace(stripped, " ");
+        }
+
+        private static string HumanizeIdentifier(string identifier)
+        {
+            if (string.IsNullOrWhiteSpace(identifier))
+            {
+                return string.Empty;
+            }
+
+            return Regex.Replace(identifier.Trim(), "([a-z0-9])([A-Z])", "$1 $2");
         }
 
         private static void HandleNarrationToggleHotkey()
@@ -789,6 +933,42 @@ namespace ADOFAI_Access
         private static void Postfix(scrCalibrationPlanet __instance)
         {
             MenuNarration.SpeakCalibrationResults(__instance);
+        }
+    }
+
+    [HarmonyPatch(typeof(scnCLS), nameof(scnCLS.SelectLevel))]
+    internal static class CustomLevelsSelectionPatch
+    {
+        private static void Postfix(scnCLS __instance, CustomLevelTile tileToSelect, bool snap)
+        {
+            MenuNarration.SpeakCustomLevelSelection(__instance, tileToSelect);
+        }
+    }
+
+    [HarmonyPatch(typeof(OptionsPanelsCLS), nameof(OptionsPanelsCLS.SelectOption), new Type[] { typeof(int) })]
+    internal static class CustomLevelsOptionSelectionByIndexPatch
+    {
+        private static void Postfix(OptionsPanelsCLS __instance, int option)
+        {
+            MenuNarration.SpeakClsOptionByIndex(__instance, option);
+        }
+    }
+
+    [HarmonyPatch(typeof(OptionsPanelsCLS), nameof(OptionsPanelsCLS.SelectOption), new Type[] { typeof(OptionsPanelsCLS.OptionName), typeof(bool) })]
+    internal static class CustomLevelsOptionSelectionByNamePatch
+    {
+        private static void Postfix(OptionsPanelsCLS __instance, OptionsPanelsCLS.OptionName name, bool leftOptions)
+        {
+            MenuNarration.SpeakClsOptionByName(__instance, name, leftOptions);
+        }
+    }
+
+    [HarmonyPatch(typeof(OptionsPanelsCLS), "TogglePanel")]
+    internal static class CustomLevelsPanelTogglePatch
+    {
+        private static void Postfix(bool left, bool show)
+        {
+            MenuNarration.SpeakCustomLevelsPanel(left, show);
         }
     }
 }

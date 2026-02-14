@@ -538,6 +538,11 @@ namespace ADOFAI_Access
                 return false;
             }
 
+            if (ADOBase.sceneName == GCNS.sceneCustomLevelSelect || ADOBase.cls != null)
+            {
+                return false;
+            }
+
             if (ADOBase.sceneName == GCNS.sceneGame || ADOBase.isScnGame || ADOBase.isPlayingLevel)
             {
                 return true;
