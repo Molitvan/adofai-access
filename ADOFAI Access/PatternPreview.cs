@@ -10,7 +10,6 @@ namespace ADOFAI_Access
         private const KeyCode ToggleKey = KeyCode.F9;
         private const double CueScheduleHorizonSeconds = 0.25;
         private const double CueLateGraceSeconds = 0.04;
-        private const float ListenBoundarySourceBpm = 128f;
         private const float ListenPhaseDuckFactor = 0.35f;
 
         private static bool _toggleHintSpoken;
@@ -402,8 +401,8 @@ namespace ADOFAI_Access
 
                 double listenStartBeat = groupIndex * (double)beatsPerGroup;
                 double listenEndBeat = listenStartBeat + beatsPerGroup;
-                TryScheduleListenBoundaryCue(conductor, floors, groupIndex, "start", listenStartBeat - 1d, TapCueService.PlayListenStartAt, TapCueService.PlayListenStartNow);
-                TryScheduleListenBoundaryCue(conductor, floors, groupIndex, "end", listenEndBeat - 1d, TapCueService.PlayListenEndAt, TapCueService.PlayListenEndNow);
+                TryScheduleListenBoundaryCue(conductor, floors, groupIndex, "start", listenStartBeat, TapCueService.GetListenStartCueDurationSeconds(), TapCueService.PlayListenStartAt, TapCueService.PlayListenStartNow);
+                TryScheduleListenBoundaryCue(conductor, floors, groupIndex, "end", listenEndBeat, TapCueService.GetListenEndCueDurationSeconds(), TapCueService.PlayListenEndAt, TapCueService.PlayListenEndNow);
             }
         }
 
@@ -413,8 +412,9 @@ namespace ADOFAI_Access
             int listenGroupIndex,
             string markerType,
             double markerBeat,
-            Action<double, float> scheduleAction,
-            Action<float> immediateAction)
+            double cueDurationSeconds,
+            Action<double> scheduleAction,
+            Action immediateAction)
         {
             string key = listenGroupIndex.ToString() + ":" + markerType;
             if (HandledListenBoundaryCueKeys.Contains(key))
@@ -422,37 +422,37 @@ namespace ADOFAI_Access
                 return;
             }
 
-            if (!TryGetCueDspForBeat(conductor, floors, markerBeat, out double dueDsp))
+            if (!TryGetCueDspForBeat(conductor, floors, markerBeat, out double boundaryDsp))
             {
                 return;
             }
 
-            double untilDue = dueDsp - conductor.dspTime;
-            if (untilDue < -CueLateGraceSeconds)
+            double cueStartDsp = boundaryDsp - Math.Max(0.0, cueDurationSeconds);
+            double untilCueStart = cueStartDsp - conductor.dspTime;
+            if (untilCueStart < -CueLateGraceSeconds)
             {
                 HandledListenBoundaryCueKeys.Add(key);
                 return;
             }
 
-            if (untilDue > CueScheduleHorizonSeconds)
+            if (untilCueStart > CueScheduleHorizonSeconds)
             {
                 return;
             }
 
-            float playbackRate = GetListenBoundaryPlaybackRate(conductor, floors, markerBeat);
             ListenRepeatStartEndCueMode cueMode = ModSettings.Current.listenRepeatStartEndCueMode;
             bool useSound = cueMode == ListenRepeatStartEndCueMode.Sound || cueMode == ListenRepeatStartEndCueMode.Both;
 
             HandledListenBoundaryCueKeys.Add(key);
             if (useSound)
             {
-                if (untilDue >= 0.0)
+                if (untilCueStart >= 0.0)
                 {
-                    scheduleAction(dueDsp, playbackRate);
+                    scheduleAction(cueStartDsp);
                 }
                 else
                 {
-                    immediateAction(playbackRate);
+                    immediateAction();
                 }
             }
 
@@ -706,100 +706,6 @@ namespace ADOFAI_Access
             float pitch = conductor.song != null && conductor.song.pitch > 0f ? conductor.song.pitch : 1f;
             cueDsp = conductor.dspTimeSongPosZero + (conductor.crotchetAtStart * beat / pitch);
             return true;
-        }
-
-        private static float GetListenBoundaryPlaybackRate(scrConductor conductor, List<scrFloor> floors, double beat)
-        {
-            float bpm = TryGetEffectiveBpmAtBeat(conductor, floors, beat, out float effectiveBpm) ? effectiveBpm : GetFallbackEffectiveBpm(conductor);
-            if (bpm <= 0f)
-            {
-                return 1f;
-            }
-
-            return bpm / ListenBoundarySourceBpm;
-        }
-
-        private static bool TryGetEffectiveBpmAtBeat(scrConductor conductor, List<scrFloor> floors, double beat, out float bpm)
-        {
-            bpm = 0f;
-            if (floors == null || floors.Count < 2)
-            {
-                return false;
-            }
-
-            scrFloor firstA = null;
-            scrFloor firstB = null;
-            scrFloor lastA = null;
-            scrFloor lastB = null;
-
-            for (int i = 1; i < floors.Count; i++)
-            {
-                scrFloor a = floors[i - 1];
-                scrFloor b = floors[i];
-                if (a == null || b == null || b.entryBeat <= a.entryBeat)
-                {
-                    continue;
-                }
-
-                if (firstA == null)
-                {
-                    firstA = a;
-                    firstB = b;
-                }
-
-                lastA = a;
-                lastB = b;
-
-                if (beat < a.entryBeat || beat > b.entryBeat)
-                {
-                    continue;
-                }
-
-                return TryComputeBpmFromSegment(a, b, out bpm);
-            }
-
-            if (firstA != null && firstB != null && beat < firstA.entryBeat)
-            {
-                return TryComputeBpmFromSegment(firstA, firstB, out bpm);
-            }
-
-            if (lastA != null && lastB != null && beat > lastB.entryBeat)
-            {
-                return TryComputeBpmFromSegment(lastA, lastB, out bpm);
-            }
-
-            return false;
-        }
-
-        private static bool TryComputeBpmFromSegment(scrFloor a, scrFloor b, out float bpm)
-        {
-            bpm = 0f;
-            if (a == null || b == null)
-            {
-                return false;
-            }
-
-            double deltaBeat = b.entryBeat - a.entryBeat;
-            double deltaTime = b.entryTimePitchAdj - a.entryTimePitchAdj;
-            if (deltaBeat <= 0.0001 || deltaTime <= 0.0001)
-            {
-                return false;
-            }
-
-            bpm = (float)(60.0 * deltaBeat / deltaTime);
-            return bpm > 0f;
-        }
-
-        private static float GetFallbackEffectiveBpm(scrConductor conductor)
-        {
-            if (conductor == null)
-            {
-                return 128f;
-            }
-
-            float pitch = conductor.song != null && conductor.song.pitch > 0f ? conductor.song.pitch : 1f;
-            float bpm = conductor.bpm > 0f ? conductor.bpm * pitch : 0f;
-            return bpm > 0f ? bpm : 128f;
         }
 
         private static bool TryGetEntryTimePitchAdjustedForBeat(List<scrFloor> floors, double beat, out double entryTimePitchAdj)

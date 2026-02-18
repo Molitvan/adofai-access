@@ -114,6 +114,16 @@ namespace ADOFAI_Access
             PlayCueAt(ListenEndCueState, dspTime, playbackRate, allowFallbackWhileCustomLoads: true);
         }
 
+        public static double GetListenStartCueDurationSeconds()
+        {
+            return GetCueDurationSeconds(ListenStartCueState, allowFallbackWhileCustomLoads: true);
+        }
+
+        public static double GetListenEndCueDurationSeconds()
+        {
+            return GetCueDurationSeconds(ListenEndCueState, allowFallbackWhileCustomLoads: true);
+        }
+
         private static void PlayCueNow(CueClipState cueState, float playbackRate = 1f, bool allowFallbackWhileCustomLoads = false)
         {
             EnsureAudioReady(cueState);
@@ -552,6 +562,18 @@ namespace ADOFAI_Access
             }
 
             return cueState.FallbackClip;
+        }
+
+        private static double GetCueDurationSeconds(CueClipState cueState, bool allowFallbackWhileCustomLoads)
+        {
+            EnsureAudioReady(cueState);
+            AudioClip clip = SelectClip(cueState, allowFallbackWhileCustomLoads);
+            if (clip == null)
+            {
+                return 0.0;
+            }
+
+            return Math.Max(0.0, clip.length);
         }
 
         private static AudioClip GetPlaybackClip(CueClipState cueState, AudioClip baseClip, float playbackRate)
