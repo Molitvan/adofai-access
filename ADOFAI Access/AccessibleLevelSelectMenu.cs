@@ -69,22 +69,22 @@ namespace ADOFAI_Access
             if (context == MenuContext.LevelSelect && !_openHintSpokenLevelSelect)
             {
                 _openHintSpokenLevelSelect = true;
-                MenuNarration.Speak("Press F6 to open accessible menu", interrupt: true);
+                MenuNarration.Speak("Press F6 to open accessible menu", interrupt: false);
             }
             else if (context == MenuContext.CustomLevelsInitial && !_openHintSpokenClsInitial)
             {
                 _openHintSpokenClsInitial = true;
-                MenuNarration.Speak("Press F6 to open accessible menu", interrupt: true);
+                MenuNarration.Speak("Press F6 to open accessible menu", interrupt: false);
             }
             else if (context == MenuContext.CustomLevelsBrowse && !_openHintSpokenClsBrowse)
             {
                 _openHintSpokenClsBrowse = true;
-                MenuNarration.Speak("Press F6 to open accessible menu", interrupt: true);
+                MenuNarration.Speak("Press F6 to open accessible menu", interrupt: false);
             }
             else if (context == MenuContext.GameplayPressStart && !_openHintSpokenGameplayStart)
             {
                 _openHintSpokenGameplayStart = true;
-                MenuNarration.Speak("Press F6 to open accessible menu", interrupt: true);
+                MenuNarration.Speak("Press F6 to open accessible menu", interrupt: false);
             }
 
             if (_isOpen && context != _openContext)
