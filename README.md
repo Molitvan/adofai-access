@@ -4,7 +4,7 @@ A blind accessibility mod for A Dance of Fire and Ice (work in progress)
 
 ## Important note
 
-This mod is still in early development. There are a lot of known issues and parts of the game that still aren't supported. Keep this in mind before purchasing the game.
+This mod is still in early development. There are a lot of known issues and parts of the game that still aren't supported. Keep this in mind before purchasing the game. For any questions, the best place to ask is [the mod's channel on the Accessibility Disco Discord server](https://go.molitvan.me/ADOFAIAccessDiscord).
 
 ## Installation
 Note: you have to have A Dance of Fire and Ice installed before following this
