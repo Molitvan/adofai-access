@@ -22,6 +22,7 @@ namespace ADOFAI_Access
         private static bool _openHintSpokenClsInitial;
         private static bool _openHintSpokenClsBrowse;
         private static bool _openHintSpokenGameplayStart;
+        private static bool _openHintSpokenNeoCosmos;
         private static MenuContext _openContext;
         private static readonly FieldInfo ClsSelectedLevelKeyField = typeof(scnCLS).GetField("levelToSelect", BindingFlags.Instance | BindingFlags.NonPublic);
         public static bool IsOpen => _isOpen;
@@ -33,7 +34,8 @@ namespace ADOFAI_Access
             LevelSelect = 1,
             CustomLevelsInitial = 2,
             CustomLevelsBrowse = 3,
-            GameplayPressStart = 4
+            GameplayPressStart = 4,
+            NeoCosmosMap = 5
         }
 
         private sealed class MenuEntry
@@ -57,6 +59,7 @@ namespace ADOFAI_Access
                 _openHintSpokenClsInitial = false;
                 _openHintSpokenClsBrowse = false;
                 _openHintSpokenGameplayStart = false;
+                _openHintSpokenNeoCosmos = false;
 
                 if (_isOpen)
                 {
@@ -84,6 +87,11 @@ namespace ADOFAI_Access
             else if (context == MenuContext.GameplayPressStart && !_openHintSpokenGameplayStart)
             {
                 _openHintSpokenGameplayStart = true;
+                MenuNarration.Speak("Press F6 to open accessible menu", interrupt: false);
+            }
+            else if (context == MenuContext.NeoCosmosMap && !_openHintSpokenNeoCosmos)
+            {
+                _openHintSpokenNeoCosmos = true;
                 MenuNarration.Speak("Press F6 to open accessible menu", interrupt: false);
             }
 
@@ -277,6 +285,10 @@ namespace ADOFAI_Access
             else if (context == MenuContext.GameplayPressStart)
             {
                 BuildGameplayPressStartEntries();
+            }
+            else if (context == MenuContext.NeoCosmosMap)
+            {
+                BuildNeoCosmosEntries();
             }
         }
 
@@ -745,6 +757,58 @@ namespace ADOFAI_Access
             AddEntry("Read best record summary", () => MenuNarration.Speak("No saved records yet", interrupt: true));
         }
 
+        private static void BuildNeoCosmosEntries()
+        {
+            AddEntry("Exit Neo Cosmos", () =>
+            {
+                Close(speak: false);
+                MenuNarration.Speak("Exiting Neo Cosmos", interrupt: true);
+                ADOBase.controller?.PortalTravelAction(Portal.TaroDLCMapExit);
+            });
+
+            if (ADOBase.sceneName == GCNS.sceneTaroMenu2 && Persistence.IsWorldComplete("T4"))
+            {
+                AddEntry("Open puzzle room 1", () =>
+                {
+                    Close(speak: false);
+                    MenuNarration.Speak("Opening puzzle room 1", interrupt: true);
+                    ADOBase.controller?.PortalTravelAction(Portal.Puzzle1);
+                });
+            }
+
+            if (ADOBase.sceneName == GCNS.sceneTaroMenu0 && Persistence.IsWorldComplete("T5"))
+            {
+                AddEntry("Play T5 X with cutscene", () =>
+                {
+                    Close(speak: false);
+                    scnTaroMenu0 taroMenu0 = UnityEngine.Object.FindObjectOfType<scnTaroMenu0>();
+                    if (taroMenu0 != null)
+                    {
+                        taroMenu0.EnableT5Cutscene();
+                    }
+
+                    MenuNarration.Speak("Starting T5 X with cutscene", interrupt: true);
+                    ADOBase.controller?.EnterLevel("T5-X", speedTrial: false);
+                });
+            }
+
+            IEnumerable<string> worlds = GetNeoCosmosMenuWorlds()
+                .OrderBy(TaroWorldSortKey)
+                .ThenBy(w => w, StringComparer.Ordinal);
+
+            foreach (string worldId in worlds)
+            {
+                bool locked = TryGetPortal(worldId, out scrPortal portal) && portal.locked;
+                string label = $"Enter world {DisplayTaroWorldId(worldId)}";
+                AddEntry(label, () =>
+                {
+                    Close(speak: false);
+                    MenuNarration.Speak($"Entering world {DisplayTaroWorldId(worldId)}", interrupt: true);
+                    ADOBase.controller?.EnterWorld(worldId);
+                }, locked);
+            }
+        }
+
         private static MenuContext GetCurrentContext()
         {
             if (ADOBase.sceneName == GCNS.sceneLevelSelect && ADOBase.levelSelect is scnLevelSelect)
@@ -767,7 +831,26 @@ namespace ADOFAI_Access
                 return MenuContext.CustomLevelsBrowse;
             }
 
+            if (IsNeoCosmosMapContext())
+            {
+                return MenuContext.NeoCosmosMap;
+            }
+
             return MenuContext.None;
+        }
+
+        private static bool IsNeoCosmosMapContext()
+        {
+            string sceneName = ADOBase.sceneName;
+            if (string.IsNullOrEmpty(sceneName))
+            {
+                return false;
+            }
+
+            return sceneName == GCNS.sceneTaroMenu0 ||
+                   sceneName == GCNS.sceneTaroMenu1 ||
+                   sceneName == GCNS.sceneTaroMenu2 ||
+                   sceneName == GCNS.sceneTaroMenu3;
         }
 
         private static bool IsGameplayPressStartContext()
@@ -796,6 +879,49 @@ namespace ADOFAI_Access
             }
 
             return !string.IsNullOrWhiteSpace(ui.txtPressToStart.text);
+        }
+
+        private static IEnumerable<string> GetNeoCosmosMenuWorlds()
+        {
+            switch (ADOBase.sceneName)
+            {
+                case GCNS.sceneTaroMenu1:
+                    return FilterExistingTaroWorlds("T1", "T2", "T3");
+                case GCNS.sceneTaroMenu2:
+                    return FilterExistingTaroWorlds("T1", "T2", "T3", "T4");
+                case GCNS.sceneTaroMenu3:
+                    return FilterExistingTaroWorlds("T1", "T2", "T3", "T4", "T5");
+                case GCNS.sceneTaroMenu0:
+                    return scrPortal.portals.Values
+                        .Where(p => p != null)
+                        .Select(p => p.world)
+                        .Where(w => !string.IsNullOrWhiteSpace(w) && w.IsTaro())
+                        .Distinct(StringComparer.Ordinal);
+                default:
+                    return Enumerable.Empty<string>();
+            }
+        }
+
+        private static IEnumerable<string> FilterExistingTaroWorlds(params string[] worlds)
+        {
+            return worlds.Where(w => !string.IsNullOrWhiteSpace(w) && GCNS.worldData.ContainsKey(w));
+        }
+
+        private static bool TryGetPortal(string worldId, out scrPortal portal)
+        {
+            portal = null;
+            if (string.IsNullOrWhiteSpace(worldId) || scrPortal.portals == null)
+            {
+                return false;
+            }
+
+            if (!scrPortal.portals.TryGetValue(worldId, out portal))
+            {
+                portal = null;
+                return false;
+            }
+
+            return portal != null;
         }
 
         private static bool TryGetSelectedCustomLevel(scnCLS cls, out string levelKey, out GenericDataCLS selectedData, out bool deleted)
@@ -998,6 +1124,45 @@ namespace ADOFAI_Access
             }
 
             return 500;
+        }
+
+        private static int TaroWorldSortKey(string worldId)
+        {
+            if (string.IsNullOrWhiteSpace(worldId))
+            {
+                return int.MaxValue;
+            }
+
+            if (string.Equals(worldId, "TP", StringComparison.OrdinalIgnoreCase))
+            {
+                return 1000;
+            }
+
+            int numeric = 0;
+            int index = 1;
+            while (index < worldId.Length && char.IsDigit(worldId[index]))
+            {
+                numeric = (numeric * 10) + (worldId[index] - '0');
+                index++;
+            }
+
+            int suffix = worldId.EndsWith("EX", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+            return numeric * 10 + suffix;
+        }
+
+        private static string DisplayTaroWorldId(string worldId)
+        {
+            if (string.IsNullOrWhiteSpace(worldId))
+            {
+                return worldId;
+            }
+
+            if (worldId.EndsWith("EX", StringComparison.OrdinalIgnoreCase) && worldId.Length > 2)
+            {
+                return worldId.Substring(0, worldId.Length - 2) + " EX";
+            }
+
+            return worldId;
         }
 
         private static string DisplayWorldId(string worldId)
