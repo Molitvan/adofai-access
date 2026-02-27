@@ -18,6 +18,8 @@ namespace ADOFAI_Access
         private static bool _previousPracticeMode;
         private static bool _previousSpeedTrialMode;
         private static float _previousSpeedTrialValue;
+        private static int _previousCheckpointNum;
+        private static int _previousPracticeLength;
 
         private static bool _toggleHintSpoken;
         private static int _lastPredictedSeqId = -1;
@@ -139,9 +141,17 @@ namespace ADOFAI_Access
             _previousPracticeMode = GCS.practiceMode;
             _previousSpeedTrialMode = GCS.speedTrialMode;
             _previousSpeedTrialValue = GCS.currentSpeedTrial;
+            _previousCheckpointNum = GCS.checkpointNum;
+            _previousPracticeLength = GCS.practiceLength;
+
+            int floorCount = ADOBase.lm != null && ADOBase.lm.listFloors != null ? ADOBase.lm.listFloors.Count : 0;
+            int checkpoint = Mathf.Clamp(GCS.checkpointNum, 0, Mathf.Max(0, floorCount - 1));
+            int remainingLength = floorCount > 0 ? Mathf.Max(0, floorCount - 1 - checkpoint) : GCS.practiceLength;
 
             _active = true;
             GCS.practiceMode = true;
+            GCS.checkpointNum = checkpoint;
+            GCS.practiceLength = remainingLength;
             GCS.speedTrialMode = false;
             RDC.auto = true;
             _lastPredictedSeqId = -1;
@@ -164,6 +174,8 @@ namespace ADOFAI_Access
             TapCueService.StopAllCues();
             RDC.auto = _previousAuto;
             GCS.practiceMode = _previousPracticeMode;
+            GCS.checkpointNum = _previousCheckpointNum;
+            GCS.practiceLength = _previousPracticeLength;
             GCS.speedTrialMode = _previousSpeedTrialMode;
             GCS.currentSpeedTrial = _previousSpeedTrialValue;
             GCS.nextSpeedRun = _previousSpeedTrialValue;
