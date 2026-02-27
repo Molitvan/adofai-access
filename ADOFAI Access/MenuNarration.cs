@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using DavyKager;
 using HarmonyLib;
@@ -339,9 +340,22 @@ namespace ADOFAI_Access
                     valueState = BestOf(settingButton.valueLabel != null ? settingButton.valueLabel.text : null, string.Empty);
                     break;
                 case PauseLevelButton levelButton:
-                    label = ExtractPauseLevelLabel(levelButton);
+                    if (TryDescribePracticeTimelinePauseButton(levelButton, out string practiceLabel, out string practiceValue))
+                    {
+                        label = practiceLabel;
+                        valueState = practiceValue;
+                    }
+                    else if (TryDescribeSpeedTrialPauseButton(levelButton, out string speedLabel, out string speedValue))
+                    {
+                        label = speedLabel;
+                        valueState = speedValue;
+                    }
+                    else
+                    {
+                        label = ExtractPauseLevelLabel(levelButton);
+                        valueState = string.Empty;
+                    }
                     controlType = "button";
-                    valueState = string.Empty;
                     break;
                 case SettingsTabButton tabButton:
                     label = BestOf(tabButton.label != null ? tabButton.label.text : null, tabButton.name);
@@ -838,6 +852,153 @@ namespace ADOFAI_Access
             return BestOf(restart, levelToken, levelButton.label != null ? levelButton.label.text : null, levelButton.levelName, levelButton.name);
         }
 
+        private static bool TryDescribePracticeTimelinePauseButton(PauseLevelButton levelButton, out string label, out string valueState)
+        {
+            label = string.Empty;
+            valueState = string.Empty;
+            if (levelButton == null || !GCS.practiceMode)
+            {
+                return false;
+            }
+
+            scrController controller = ADOBase.controller;
+            PauseMenu pauseMenu = controller != null ? controller.pauseMenu : null;
+            PracticeTimeline timeline = pauseMenu != null ? pauseMenu.practiceTimeline : null;
+            if (timeline == null)
+            {
+                return false;
+            }
+
+            string speedText = NormalizeText(timeline.speedText != null ? timeline.speedText.text : null);
+            if (ReferenceEquals(levelButton, timeline.startButton))
+            {
+                label = "Practice start";
+                valueState = timeline.practiceStart.ToString(CultureInfo.InvariantCulture);
+                return true;
+            }
+
+            if (ReferenceEquals(levelButton, timeline.endButton))
+            {
+                label = "Practice end";
+                valueState = timeline.practiceEnd.ToString(CultureInfo.InvariantCulture);
+                return true;
+            }
+
+            if (ReferenceEquals(levelButton, timeline.speedButton))
+            {
+                label = BestOf(levelButton.restartLabel != null ? levelButton.restartLabel.text : null, "Practice speed");
+                valueState = string.IsNullOrWhiteSpace(speedText) ? "unknown" : speedText;
+                return true;
+            }
+
+            RectTransform iconTransform = levelButton.icon != null ? levelButton.icon.rectTransform : null;
+            if (iconTransform != null && timeline.speedLeftButton != null && timeline.speedLeftButton.icon != null && iconTransform == timeline.speedLeftButton.icon.rectTransform)
+            {
+                label = "Lower practice speed";
+                valueState = string.IsNullOrWhiteSpace(speedText) ? "unknown" : speedText;
+                return true;
+            }
+
+            if (iconTransform != null && timeline.speedRightButton != null && timeline.speedRightButton.icon != null && iconTransform == timeline.speedRightButton.icon.rectTransform)
+            {
+                label = "Higher practice speed";
+                valueState = string.IsNullOrWhiteSpace(speedText) ? "unknown" : speedText;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryDescribeSpeedTrialPauseButton(PauseLevelButton levelButton, out string label, out string valueState)
+        {
+            label = string.Empty;
+            valueState = string.Empty;
+            if (levelButton == null || !GCS.speedTrialMode)
+            {
+                return false;
+            }
+
+            scrController controller = ADOBase.controller;
+            PauseMenu pauseMenu = controller != null ? controller.pauseMenu : null;
+            PauseLevel pauseLevel = pauseMenu != null ? pauseMenu.pauseLevel : null;
+            if (pauseLevel == null)
+            {
+                return false;
+            }
+
+            string speedText = FormatSpeedTrialValue();
+            if (ReferenceEquals(levelButton, pauseLevel.speedTrialButton))
+            {
+                label = BestOf(levelButton.restartLabel != null ? levelButton.restartLabel.text : null, "Restart");
+                valueState = speedText;
+                return true;
+            }
+
+            RectTransform iconTransform = levelButton.icon != null ? levelButton.icon.rectTransform : null;
+            if (iconTransform != null && iconTransform == pauseLevel.leftArrowTransform)
+            {
+                label = "Lower speed trial";
+                valueState = speedText;
+                return true;
+            }
+
+            if (iconTransform != null && iconTransform == pauseLevel.rightArrowTransform)
+            {
+                label = "Higher speed trial";
+                valueState = speedText;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static string FormatSpeedTrialValue()
+        {
+            float value = GCS.nextSpeedRun > 0f ? GCS.nextSpeedRun : GCS.currentSpeedTrial;
+            if (value <= 0f)
+            {
+                value = 1f;
+            }
+
+            return value.ToString("0.0#", CultureInfo.InvariantCulture) + "x";
+        }
+
+        public static void SpeakPauseSpeedTrialValueChange()
+        {
+            if (AccessSettingsMenu.IsOpen || !ModSettings.Current.menuNarrationEnabled || ADOBase.isLevelEditor || !GCS.speedTrialMode)
+            {
+                return;
+            }
+
+            Speak("Speed trial " + FormatSpeedTrialValue(), interrupt: true);
+        }
+
+        public static void SpeakPracticeTimelineValueChange(string label, int value)
+        {
+            if (AccessSettingsMenu.IsOpen || !ModSettings.Current.menuNarrationEnabled || ADOBase.isLevelEditor || !GCS.practiceMode)
+            {
+                return;
+            }
+
+            Speak($"{label} {value}", interrupt: true);
+        }
+
+        public static void SpeakPracticeTimelineSpeedValueChange(string speedText)
+        {
+            if (AccessSettingsMenu.IsOpen || !ModSettings.Current.menuNarrationEnabled || ADOBase.isLevelEditor || !GCS.practiceMode)
+            {
+                return;
+            }
+
+            string normalized = NormalizeText(speedText);
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                normalized = "unknown";
+            }
+
+            Speak("Practice speed " + normalized, interrupt: true);
+        }
+
         private static string GetLevelToken(string levelName)
         {
             string normalized = NormalizeText(levelName);
@@ -1151,6 +1312,103 @@ namespace ADOFAI_Access
         {
             Text text = __instance != null ? __instance.GetComponent<Text>() : null;
             MenuNarration.SpeakLevelGetReady(text != null ? text.text : null);
+        }
+    }
+
+    [HarmonyPatch(typeof(PauseMenu), nameof(PauseMenu.ChangeLevel))]
+    internal static class PauseMenuSpeedTrialChangePatch
+    {
+        private static void Postfix()
+        {
+            MenuNarration.SpeakPauseSpeedTrialValueChange();
+        }
+    }
+
+    [HarmonyPatch(typeof(PauseMenu), nameof(PauseMenu.SelectHorizontal))]
+    internal static class PauseMenuSelectHorizontalNarrationPatch
+    {
+        private static readonly FieldInfo SelectedVerticalIndexField = AccessTools.Field(typeof(PauseMenu), "selectedVerticalIndex");
+
+        private struct HorizontalSnapshot
+        {
+            public bool Valid;
+            public bool FirstPress;
+            public bool PracticeMode;
+            public bool SpeedTrialMode;
+            public int SelectedVerticalIndex;
+            public int PracticeStart;
+            public int PracticeEnd;
+            public string PracticeSpeedText;
+            public float NextSpeedRun;
+        }
+
+        private static void Prefix(PauseMenu __instance, bool firstPress, ref HorizontalSnapshot __state)
+        {
+            __state = default;
+            if (__instance == null || SelectedVerticalIndexField == null)
+            {
+                return;
+            }
+
+            __state.Valid = true;
+            __state.FirstPress = firstPress;
+            __state.PracticeMode = GCS.practiceMode;
+            __state.SpeedTrialMode = GCS.speedTrialMode;
+            __state.SelectedVerticalIndex = (int)SelectedVerticalIndexField.GetValue(__instance);
+            __state.NextSpeedRun = GCS.nextSpeedRun;
+
+            PracticeTimeline timeline = __instance.practiceTimeline;
+            if (timeline != null)
+            {
+                __state.PracticeStart = timeline.practiceStart;
+                __state.PracticeEnd = timeline.practiceEnd;
+                __state.PracticeSpeedText = timeline.speedText != null ? timeline.speedText.text : string.Empty;
+            }
+        }
+
+        private static void Postfix(PauseMenu __instance, ref HorizontalSnapshot __state)
+        {
+            if (!__state.Valid || __instance == null)
+            {
+                return;
+            }
+
+            if (__state.PracticeMode)
+            {
+                PracticeTimeline timeline = __instance.practiceTimeline;
+                if (timeline == null)
+                {
+                    return;
+                }
+
+                if (__state.SelectedVerticalIndex == 1 && timeline.practiceStart != __state.PracticeStart)
+                {
+                    MenuNarration.SpeakPracticeTimelineValueChange("Practice start", timeline.practiceStart);
+                    return;
+                }
+
+                if (__state.SelectedVerticalIndex == 2 && timeline.practiceEnd != __state.PracticeEnd)
+                {
+                    MenuNarration.SpeakPracticeTimelineValueChange("Practice end", timeline.practiceEnd);
+                    return;
+                }
+
+                if (__state.SelectedVerticalIndex == 3)
+                {
+                    string currentSpeedText = timeline.speedText != null ? timeline.speedText.text : string.Empty;
+                    if (!string.Equals(currentSpeedText, __state.PracticeSpeedText, StringComparison.Ordinal))
+                    {
+                        MenuNarration.SpeakPracticeTimelineSpeedValueChange(currentSpeedText);
+                    }
+                }
+
+                return;
+            }
+
+            if (__state.SpeedTrialMode && GCS.speedTrialMode && Math.Abs(GCS.nextSpeedRun - __state.NextSpeedRun) > 0.0001f)
+            {
+                MenuNarration.SpeakPauseSpeedTrialValueChange();
+            }
         }
     }
 
