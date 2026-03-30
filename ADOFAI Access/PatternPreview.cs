@@ -8,9 +8,24 @@ namespace ADOFAI_Access
     internal static class PatternPreview
     {
         private const KeyCode ToggleKey = KeyCode.F9;
-        private const double CueScheduleHorizonSeconds = 0.25;
-        private const double CueLateGraceSeconds = 0.04;
         private const float ListenPhaseDuckFactor = 0.35f;
+
+        private sealed class ListenCueEvent
+        {
+            public int SeqId;
+            public double CueDsp;
+        }
+
+        private sealed class ArmedListenGroup
+        {
+            public int ListenGroupIndex;
+            public int RepeatGroupIndex;
+            public double ListenStartDsp;
+            public double RepeatStartDsp;
+            public readonly List<ListenCueEvent> Cues = new List<ListenCueEvent>();
+            public readonly HashSet<int> ScheduledSeqIds = new HashSet<int>();
+            public int NextCueIndex;
+        }
 
         private static bool _toggleHintSpoken;
         private static bool _runtimeModeActive;
@@ -21,7 +36,9 @@ namespace ADOFAI_Access
         private static bool _isListenDuckingActive;
         private static float _preDuckSongVolume = 1f;
         private static readonly HashSet<int> HandledSeqIds = new HashSet<int>();
+        private static readonly HashSet<int> LastListenScheduledSeqIds = new HashSet<int>();
         private static readonly HashSet<string> HandledListenBoundaryCueKeys = new HashSet<string>();
+        private static ArmedListenGroup _armedListenGroup;
 
         public static bool IsActive => ModSettings.Current.playMode != PlayMode.Vanilla;
         public static PlayMode CurrentMode => ModSettings.Current.playMode;
@@ -76,8 +93,9 @@ namespace ADOFAI_Access
 
             if (controller.paused || !CanScheduleInCurrentState(controller))
             {
-                ResetSchedulingState();
+                ResetCueSchedulingState();
                 TapCueService.StopAllCues();
+                ClearArmedListenGroup();
                 if (_runtimeMode == PlayMode.ListenRepeat)
                 {
                     RestoreAuto();
@@ -190,7 +208,9 @@ namespace ADOFAI_Access
                 _previousAuto = RDC.auto;
                 _hasStoredPreviousAuto = true;
                 _listenRepeatPhase = -1;
-                ResetSchedulingState();
+                LastListenScheduledSeqIds.Clear();
+                ClearArmedListenGroup();
+                ResetAllSchedulingState();
                 MelonLogger.Msg($"[ADOFAI Access] Play mode runtime active: {GetModeLabel(mode)}.");
                 return;
             }
@@ -205,7 +225,9 @@ namespace ADOFAI_Access
             TapCueService.StopAllCues();
             _runtimeMode = mode;
             _listenRepeatPhase = -1;
-            ResetSchedulingState();
+            LastListenScheduledSeqIds.Clear();
+            ClearArmedListenGroup();
+            ResetAllSchedulingState();
             MelonLogger.Msg($"[ADOFAI Access] Play mode runtime switched: {GetModeLabel(mode)}.");
         }
 
@@ -222,7 +244,9 @@ namespace ADOFAI_Access
             ApplyListenDucking(ADOBase.conductor, shouldDuck: false);
             _runtimeMode = PlayMode.Vanilla;
             _listenRepeatPhase = -1;
-            ResetSchedulingState();
+            LastListenScheduledSeqIds.Clear();
+            ClearArmedListenGroup();
+            ResetAllSchedulingState();
         }
 
         private static void RestoreAuto()
@@ -277,6 +301,7 @@ namespace ADOFAI_Access
                 // Do not emit listen-repeat cues during countdown/checkpoint phases.
                 TapCueService.StopAllCues();
                 ApplyListenDucking(conductor, shouldDuck: false);
+                ResetListenRepeatRunState();
                 return;
             }
 
@@ -286,15 +311,21 @@ namespace ADOFAI_Access
                 return;
             }
 
+            double nowDsp = conductor.dspTime;
             int beatsPerGroup = Math.Max(1, ModSettings.Current.patternPreviewBeatsAhead);
             int groupIndex = Mathf.FloorToInt((float)(currentBeat / beatsPerGroup));
-            TryScheduleListenBoundaryCues(conductor, beatsPerGroup, groupIndex);
             int phase = (groupIndex & 1) == 0 ? 0 : 1;
             bool phaseChanged = phase != _listenRepeatPhase;
             if (phaseChanged)
             {
+                if (_listenRepeatPhase == 0)
+                {
+                    CaptureCompletedListenPhase();
+                }
+
                 _listenRepeatPhase = phase;
-                ResetSchedulingState();
+                ResetCueSchedulingState();
+
                 ListenRepeatStartEndCueMode cueMode = ModSettings.Current.listenRepeatStartEndCueMode;
                 bool useSpeech = cueMode == ListenRepeatStartEndCueMode.Speech || cueMode == ListenRepeatStartEndCueMode.Both;
                 if (useSpeech)
@@ -303,16 +334,17 @@ namespace ADOFAI_Access
                 }
             }
 
+            TryScheduleListenBoundaryCues(conductor, beatsPerGroup, groupIndex, nowDsp, phase, phaseChanged);
+            ArmListenGroupIfNeeded(conductor, beatsPerGroup, groupIndex, phase);
+            FlushArmedListenGroup(conductor, nowDsp, phase == 0);
+
             if (phase == 0)
             {
                 RDC.auto = true;
                 ApplyListenDucking(conductor, shouldDuck: true);
-                TryScheduleListenRepeatGroupCues(conductor, groupIndex, beatsPerGroup);
                 return;
             }
 
-            // If the upcoming repeat target's shifted cue time falls outside the
-            // corresponding listen window, it could never have been heard in Listen.
             RDC.auto = ShouldForceAutoForUncuedRepeatTarget(controller, conductor, beatsPerGroup);
             ApplyListenDucking(conductor, shouldDuck: false);
         }
@@ -331,7 +363,7 @@ namespace ADOFAI_Access
                 return false;
             }
 
-            if (DidRepeatTargetMissListenCueWindow(target, conductor, beatsPerGroup))
+            if (!LastListenScheduledSeqIds.Contains(target.seqID))
             {
                 return true;
             }
@@ -380,7 +412,7 @@ namespace ADOFAI_Access
             return seenTarget;
         }
 
-        private static void TryScheduleListenBoundaryCues(scrConductor conductor, int beatsPerGroup, int currentGroupIndex)
+        private static void TryScheduleListenBoundaryCues(scrConductor conductor, int beatsPerGroup, int currentGroupIndex, double nowDsp, int phase, bool phaseChanged)
         {
             scrLevelMaker levelMaker = ADOBase.lm;
             if (conductor == null || levelMaker == null || levelMaker.listFloors == null || beatsPerGroup <= 0)
@@ -389,20 +421,90 @@ namespace ADOFAI_Access
             }
 
             List<scrFloor> floors = levelMaker.listFloors;
-            int minGroup = currentGroupIndex - 2;
-            int maxGroup = currentGroupIndex + 2;
-            for (int groupIndex = minGroup; groupIndex <= maxGroup; groupIndex++)
+            foreach (BoundaryCueRequest request in GetBoundaryCueRequests(currentGroupIndex, phase, phaseChanged))
             {
-                if ((groupIndex & 1) != 0)
+                if ((request.ListenGroupIndex & 1) != 0)
                 {
                     continue;
                 }
 
-                double listenStartBeat = groupIndex * (double)beatsPerGroup;
+                double listenStartBeat = request.ListenGroupIndex * (double)beatsPerGroup;
                 double listenEndBeat = listenStartBeat + beatsPerGroup;
-                TryScheduleListenBoundaryCue(conductor, floors, groupIndex, "start", listenStartBeat, TapCueService.GetListenStartCueDurationSeconds(), TapCueService.PlayListenStartAt, TapCueService.PlayListenStartNow);
-                TryScheduleListenBoundaryCue(conductor, floors, groupIndex, "end", listenEndBeat, TapCueService.GetListenEndCueDurationSeconds(), TapCueService.PlayListenEndAt, TapCueService.PlayListenEndNow);
+                double listenStartDsp;
+                double repeatStartDsp;
+                if (!TryGetCueDspForBeat(conductor, floors, listenStartBeat, out listenStartDsp) ||
+                    !TryGetCueDspForBeat(conductor, floors, listenEndBeat, out repeatStartDsp))
+                {
+                    continue;
+                }
+
+                TryScheduleListenBoundaryCue(
+                    conductor,
+                    floors,
+                    request.ListenGroupIndex,
+                    "start",
+                    listenStartBeat,
+                    TapCueService.GetListenStartCueDurationSeconds(),
+                    TapCueService.PlayListenStartAt,
+                    TapCueService.PlayListenStartNow,
+                    nowDsp,
+                    repeatStartDsp,
+                    request.AllowImmediateStart);
+                TryScheduleListenBoundaryCue(
+                    conductor,
+                    floors,
+                    request.ListenGroupIndex,
+                    "end",
+                    listenEndBeat,
+                    TapCueService.GetListenEndCueDurationSeconds(),
+                    TapCueService.PlayListenEndAt,
+                    TapCueService.PlayListenEndNow,
+                    nowDsp,
+                    repeatStartDsp,
+                    request.AllowImmediateEnd);
             }
+        }
+
+        private sealed class BoundaryCueRequest
+        {
+            public int ListenGroupIndex;
+            public bool AllowImmediateStart;
+            public bool AllowImmediateEnd;
+        }
+
+        private static IEnumerable<BoundaryCueRequest> GetBoundaryCueRequests(int currentGroupIndex, int phase, bool phaseChanged)
+        {
+            if (phase == 0)
+            {
+                yield return new BoundaryCueRequest
+                {
+                    ListenGroupIndex = currentGroupIndex,
+                    AllowImmediateStart = phaseChanged,
+                    AllowImmediateEnd = false
+                };
+
+                yield return new BoundaryCueRequest
+                {
+                    ListenGroupIndex = currentGroupIndex + 2,
+                    AllowImmediateStart = false,
+                    AllowImmediateEnd = false
+                };
+                yield break;
+            }
+
+            yield return new BoundaryCueRequest
+            {
+                ListenGroupIndex = currentGroupIndex - 1,
+                AllowImmediateStart = false,
+                AllowImmediateEnd = phaseChanged
+            };
+
+            yield return new BoundaryCueRequest
+            {
+                ListenGroupIndex = currentGroupIndex + 1,
+                AllowImmediateStart = false,
+                AllowImmediateEnd = false
+            };
         }
 
         private static void TryScheduleListenBoundaryCue(
@@ -413,7 +515,10 @@ namespace ADOFAI_Access
             double markerBeat,
             double cueDurationSeconds,
             Action<double> scheduleAction,
-            Action immediateAction)
+            Action immediateAction,
+            double nowDsp,
+            double repeatStartDsp,
+            bool allowImmediate)
         {
             string key = listenGroupIndex.ToString() + ":" + markerType;
             if (HandledListenBoundaryCueKeys.Contains(key))
@@ -427,20 +532,30 @@ namespace ADOFAI_Access
             }
 
             double cueStartDsp = boundaryDsp - Math.Max(0.0, cueDurationSeconds);
-            double untilCueStart = cueStartDsp - conductor.dspTime;
-            if (untilCueStart < -CueLateGraceSeconds)
+            double untilCueStart = cueStartDsp - nowDsp;
+            ListenRepeatStartEndCueMode cueMode = ModSettings.Current.listenRepeatStartEndCueMode;
+            bool useSound = cueMode == ListenRepeatStartEndCueMode.Sound || cueMode == ListenRepeatStartEndCueMode.Both;
+
+            if (untilCueStart < 0.0 && cueStartDsp < repeatStartDsp && allowImmediate)
+            {
+                HandledListenBoundaryCueKeys.Add(key);
+                if (useSound)
+                {
+                    immediateAction();
+                }
+                return;
+            }
+
+            if (untilCueStart < 0.0)
             {
                 HandledListenBoundaryCueKeys.Add(key);
                 return;
             }
 
-            if (untilCueStart > CueScheduleHorizonSeconds)
+            if (untilCueStart > GetScheduleHorizonSeconds(conductor))
             {
                 return;
             }
-
-            ListenRepeatStartEndCueMode cueMode = ModSettings.Current.listenRepeatStartEndCueMode;
-            bool useSound = cueMode == ListenRepeatStartEndCueMode.Sound || cueMode == ListenRepeatStartEndCueMode.Both;
 
             HandledListenBoundaryCueKeys.Add(key);
             if (useSound)
@@ -457,34 +572,49 @@ namespace ADOFAI_Access
 
         }
 
-        private static void TryScheduleListenRepeatGroupCues(scrConductor conductor, int listenGroupIndex, int beatsPerGroup)
+        private static void ArmListenGroupIfNeeded(scrConductor conductor, int beatsPerGroup, int groupIndex, int phase)
         {
-            scrLevelMaker levelMaker = ADOBase.lm;
-            if (conductor == null || levelMaker == null || levelMaker.listFloors == null || beatsPerGroup <= 0)
+            int desiredListenGroupIndex = phase == 0 ? groupIndex : groupIndex + 1;
+            if ((desiredListenGroupIndex & 1) != 0)
             {
                 return;
             }
 
-            List<scrFloor> floors = levelMaker.listFloors;
+            if (_armedListenGroup != null && _armedListenGroup.ListenGroupIndex == desiredListenGroupIndex)
+            {
+                return;
+            }
+
+            _armedListenGroup = BuildArmedListenGroup(conductor, beatsPerGroup, desiredListenGroupIndex);
+        }
+
+        private static ArmedListenGroup BuildArmedListenGroup(scrConductor conductor, int beatsPerGroup, int listenGroupIndex)
+        {
+            scrLevelMaker levelMaker = ADOBase.lm;
+            List<scrFloor> floors = levelMaker != null ? levelMaker.listFloors : null;
+            if (conductor == null || floors == null || floors.Count == 0 || beatsPerGroup <= 0)
+            {
+                return null;
+            }
+
             int repeatGroupIndex = listenGroupIndex + 1;
             double listenStartBeat = listenGroupIndex * (double)beatsPerGroup;
             double repeatStartBeat = repeatGroupIndex * (double)beatsPerGroup;
             double repeatEndBeat = repeatStartBeat + beatsPerGroup;
-
-            if (!TryGetEntryTimePitchAdjustedForBeat(floors, listenStartBeat, out double listenStartTime))
+            if (!TryGetEntryTimePitchAdjustedForBeat(floors, listenStartBeat, out double listenStartTime) ||
+                !TryGetEntryTimePitchAdjustedForBeat(floors, repeatStartBeat, out double repeatStartTime))
             {
-                return;
+                return null;
             }
 
-            if (!TryGetEntryTimePitchAdjustedForBeat(floors, repeatStartBeat, out double repeatStartTime))
-            {
-                return;
-            }
-
-            // Shift the upcoming repeat group back to the listen group's start.
-            // This preserves the repeat group's internal timing through tempo changes.
             double groupTimeShift = repeatStartTime - listenStartTime;
-            double nowDsp = conductor.dspTime;
+            ArmedListenGroup group = new ArmedListenGroup
+            {
+                ListenGroupIndex = listenGroupIndex,
+                RepeatGroupIndex = repeatGroupIndex,
+                ListenStartDsp = conductor.dspTimeSongPosZero + listenStartTime,
+                RepeatStartDsp = conductor.dspTimeSongPosZero + repeatStartTime
+            };
 
             for (int i = 0; i < floors.Count; i++)
             {
@@ -505,28 +635,62 @@ namespace ADOFAI_Access
                 }
 
                 double previewDueDsp = conductor.dspTimeSongPosZero + floor.entryTimePitchAdj - groupTimeShift;
-                double untilPreview = previewDueDsp - nowDsp;
-                if (untilPreview < -CueLateGraceSeconds)
-                {
-                    HandledSeqIds.Add(floor.seqID);
-                    continue;
-                }
-
-                if (untilPreview > CueScheduleHorizonSeconds)
+                if (previewDueDsp < group.ListenStartDsp || previewDueDsp >= group.RepeatStartDsp)
                 {
                     continue;
                 }
 
-                HandledSeqIds.Add(floor.seqID);
-                if (untilPreview >= 0.0)
+                group.Cues.Add(new ListenCueEvent
                 {
-                    TapCueService.PlayCueAt(previewDueDsp);
+                    SeqId = floor.seqID,
+                    CueDsp = previewDueDsp
+                });
+            }
+
+            group.Cues.Sort((a, b) => a.CueDsp.CompareTo(b.CueDsp));
+            return group;
+        }
+
+        private static void FlushArmedListenGroup(scrConductor conductor, double nowDsp, bool allowImmediateLatePlayback)
+        {
+            if (_armedListenGroup == null || conductor == null)
+            {
+                return;
+            }
+
+            double scheduleHorizon = GetScheduleHorizonSeconds(conductor);
+            while (_armedListenGroup.NextCueIndex < _armedListenGroup.Cues.Count)
+            {
+                ListenCueEvent cue = _armedListenGroup.Cues[_armedListenGroup.NextCueIndex];
+                if (cue.CueDsp > nowDsp + scheduleHorizon)
+                {
+                    break;
                 }
-                else
+
+                _armedListenGroup.NextCueIndex++;
+                _armedListenGroup.ScheduledSeqIds.Add(cue.SeqId);
+                if (cue.CueDsp > nowDsp)
+                {
+                    TapCueService.PlayCueAt(cue.CueDsp);
+                }
+                else if (allowImmediateLatePlayback && cue.CueDsp < _armedListenGroup.RepeatStartDsp)
                 {
                     TapCueService.PlayCueNow();
                 }
             }
+        }
+
+        private static void ClearArmedListenGroup()
+        {
+            _armedListenGroup = null;
+        }
+
+        private static void ResetListenRepeatRunState()
+        {
+            _listenRepeatPhase = -1;
+            LastListenScheduledSeqIds.Clear();
+            ClearArmedListenGroup();
+            ResetAllSchedulingState();
         }
 
         private static bool IsGameplayRuntimeAvailable()
@@ -580,13 +744,13 @@ namespace ADOFAI_Access
                 }
 
                 double untilPreview = previewDueDsp - nowDsp;
-                if (untilPreview < -CueLateGraceSeconds)
+                if (untilPreview < 0.0)
                 {
                     HandledSeqIds.Add(floor.seqID);
                     continue;
                 }
 
-                if (untilPreview > CueScheduleHorizonSeconds)
+                if (untilPreview > GetScheduleHorizonSeconds(conductor))
                 {
                     continue;
                 }
@@ -780,51 +944,57 @@ namespace ADOFAI_Access
             return controller.state == States.Countdown || controller.state == States.Checkpoint || controller.state == States.PlayerControl;
         }
 
-        private static void ResetSchedulingState()
+        private static void ResetCueSchedulingState()
         {
             HandledSeqIds.Clear();
+        }
+
+        private static void ResetAllSchedulingState()
+        {
+            ResetCueSchedulingState();
             HandledListenBoundaryCueKeys.Clear();
         }
 
-        private static bool DidRepeatTargetMissListenCueWindow(scrFloor target, scrConductor conductor, int beatsPerGroup)
+        private static void CaptureCompletedListenPhase()
         {
-            if (target == null || conductor == null || beatsPerGroup <= 0)
+            LastListenScheduledSeqIds.Clear();
+            if (_armedListenGroup == null)
             {
-                return false;
+                return;
             }
 
-            scrLevelMaker levelMaker = ADOBase.lm;
-            List<scrFloor> floors = levelMaker != null ? levelMaker.listFloors : null;
-            if (floors == null || floors.Count == 0 || beatsPerGroup <= 0)
+            foreach (int seqId in _armedListenGroup.ScheduledSeqIds)
             {
-                return false;
+                LastListenScheduledSeqIds.Add(seqId);
             }
-
-            int repeatGroupIndex = Mathf.FloorToInt((float)(target.entryBeat / beatsPerGroup));
-            if ((repeatGroupIndex & 1) == 0)
-            {
-                return false;
-            }
-
-            double listenStartBeat = (repeatGroupIndex - 1) * (double)beatsPerGroup;
-            double repeatStartBeat = repeatGroupIndex * (double)beatsPerGroup;
-
-            if (!TryGetEntryTimePitchAdjustedForBeat(floors, listenStartBeat, out double listenStartTime))
-            {
-                return false;
-            }
-
-            if (!TryGetEntryTimePitchAdjustedForBeat(floors, repeatStartBeat, out double repeatStartTime))
-            {
-                return false;
-            }
-
-            double listenStartDsp = conductor.dspTimeSongPosZero + listenStartTime;
-            double repeatStartDsp = conductor.dspTimeSongPosZero + repeatStartTime;
-            double groupTimeShift = repeatStartTime - listenStartTime;
-            double previewDueDsp = conductor.dspTimeSongPosZero + target.entryTimePitchAdj - groupTimeShift;
-
-            return previewDueDsp < listenStartDsp - CueLateGraceSeconds || previewDueDsp >= repeatStartDsp;
         }
+
+        private static double GetScheduleHorizonSeconds(scrConductor conductor)
+        {
+            double beatSeconds = GetBeatDurationSeconds(conductor);
+            if (beatSeconds > 0.0)
+            {
+                return Math.Max(beatSeconds, Time.unscaledDeltaTime);
+            }
+
+            return Math.Max(Time.unscaledDeltaTime, Time.smoothDeltaTime);
+        }
+
+        private static double GetBeatDurationSeconds(scrConductor conductor)
+        {
+            if (conductor == null)
+            {
+                return 0.0;
+            }
+
+            float pitch = conductor.song != null && conductor.song.pitch > 0f ? conductor.song.pitch : 1f;
+            if (conductor.crotchetAtStart <= 0.0 || pitch <= 0f)
+            {
+                return 0.0;
+            }
+
+            return conductor.crotchetAtStart / pitch;
+        }
+
     }
 }
