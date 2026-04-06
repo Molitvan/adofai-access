@@ -9,6 +9,7 @@ namespace ADOFAI_Access
     {
         private const KeyCode ToggleKey = KeyCode.F9;
         private const float ListenPhaseDuckFactor = 0.35f;
+        private const double ListenRepeatBoundaryEpsilon = 0.0001d;
 
         private sealed class ListenCueEvent
         {
@@ -40,6 +41,8 @@ namespace ADOFAI_Access
         private static readonly HashSet<string> HandledListenBoundaryCueKeys = new HashSet<string>();
         private static ArmedListenGroup _armedListenGroup;
         private static bool _listenRepeatStartupForced;
+        private static bool _checkpointRecoveryActive;
+        private static int _checkpointRecoveryTargetListenGroupIndex = -1;
 
         public static bool IsActive => ModSettings.Current.playMode != PlayMode.Vanilla;
         public static PlayMode CurrentMode => ModSettings.Current.playMode;
@@ -212,6 +215,7 @@ namespace ADOFAI_Access
                 LastListenScheduledSeqIds.Clear();
                 ClearArmedListenGroup();
                 _listenRepeatStartupForced = false;
+                ResetCheckpointRecovery();
                 ResetAllSchedulingState();
                 MelonLogger.Msg($"[ADOFAI Access] Play mode runtime active: {GetModeLabel(mode)}.");
                 return;
@@ -230,6 +234,7 @@ namespace ADOFAI_Access
             LastListenScheduledSeqIds.Clear();
             ClearArmedListenGroup();
             _listenRepeatStartupForced = false;
+            ResetCheckpointRecovery();
             ResetAllSchedulingState();
             MelonLogger.Msg($"[ADOFAI Access] Play mode runtime switched: {GetModeLabel(mode)}.");
         }
@@ -250,6 +255,7 @@ namespace ADOFAI_Access
             LastListenScheduledSeqIds.Clear();
             ClearArmedListenGroup();
             _listenRepeatStartupForced = false;
+            ResetCheckpointRecovery();
             ResetAllSchedulingState();
         }
 
@@ -319,6 +325,11 @@ namespace ADOFAI_Access
             int beatsPerGroup = Math.Max(1, ModSettings.Current.patternPreviewBeatsAhead);
             int groupIndex = Mathf.FloorToInt((float)(currentBeat / beatsPerGroup));
             int phase = (groupIndex & 1) == 0 ? 0 : 1;
+            if (HandleCheckpointRecovery(conductor, currentBeat, beatsPerGroup))
+            {
+                return;
+            }
+
             bool suppressStartupListenAnnouncement = false;
             if (_listenRepeatStartupForced)
             {
@@ -708,6 +719,37 @@ namespace ADOFAI_Access
             _armedListenGroup = null;
         }
 
+        private static void ResetCheckpointRecovery()
+        {
+            _checkpointRecoveryActive = false;
+            _checkpointRecoveryTargetListenGroupIndex = -1;
+        }
+
+        private static bool HandleCheckpointRecovery(scrConductor conductor, double currentBeat, int beatsPerGroup)
+        {
+            if (!_checkpointRecoveryActive || beatsPerGroup <= 0)
+            {
+                return false;
+            }
+
+            double targetStartBeat = _checkpointRecoveryTargetListenGroupIndex * (double)beatsPerGroup;
+            if (currentBeat + ListenRepeatBoundaryEpsilon >= targetStartBeat)
+            {
+                ResetCheckpointRecovery();
+                _listenRepeatPhase = -1;
+                LastListenScheduledSeqIds.Clear();
+                ClearArmedListenGroup();
+                ResetAllSchedulingState();
+                return false;
+            }
+
+            TapCueService.StopAllCues();
+            ClearArmedListenGroup();
+            RDC.auto = true;
+            ApplyListenDucking(conductor, shouldDuck: false);
+            return true;
+        }
+
         internal static void PrimeListenRepeatStart(scrController controller)
         {
             if (controller == null || ModSettings.Current.playMode != PlayMode.ListenRepeat || LevelPreview.IsActive)
@@ -723,19 +765,34 @@ namespace ADOFAI_Access
             }
 
             int beatsPerGroup = Math.Max(1, ModSettings.Current.patternPreviewBeatsAhead);
-            if (current.entryBeat >= beatsPerGroup)
+            double currentBeat = current.entryBeat;
+            int currentGroupIndex = Mathf.FloorToInt((float)(currentBeat / beatsPerGroup));
+            double currentGroupStartBeat = currentGroupIndex * (double)beatsPerGroup;
+            bool atGroupBoundary = Math.Abs(currentBeat - currentGroupStartBeat) <= ListenRepeatBoundaryEpsilon;
+            bool atFullListenGroupStart = atGroupBoundary && (currentGroupIndex & 1) == 0;
+
+            if (!atFullListenGroupStart)
             {
                 _listenRepeatStartupForced = false;
+                ResetCheckpointRecovery();
+                _checkpointRecoveryActive = true;
+                _checkpointRecoveryTargetListenGroupIndex = currentGroupIndex + ((currentGroupIndex & 1) == 0 ? 2 : 1);
+                _listenRepeatPhase = -1;
+                LastListenScheduledSeqIds.Clear();
+                ClearArmedListenGroup();
+                ResetAllSchedulingState();
+                TapCueService.StopAllCues();
                 return;
             }
 
-            _listenRepeatStartupForced = true;
+            _listenRepeatStartupForced = currentGroupIndex == 0;
+            ResetCheckpointRecovery();
             _listenRepeatPhase = -1;
             LastListenScheduledSeqIds.Clear();
             ClearArmedListenGroup();
             ResetAllSchedulingState();
 
-            _armedListenGroup = BuildArmedListenGroup(conductor, beatsPerGroup, listenGroupIndex: 0);
+            _armedListenGroup = BuildArmedListenGroup(conductor, beatsPerGroup, currentGroupIndex);
             FlushArmedListenGroup(conductor, conductor.dspTime, allowImmediateLatePlayback: false);
         }
 
@@ -745,6 +802,7 @@ namespace ADOFAI_Access
             LastListenScheduledSeqIds.Clear();
             ClearArmedListenGroup();
             _listenRepeatStartupForced = false;
+            ResetCheckpointRecovery();
             ResetAllSchedulingState();
         }
 
