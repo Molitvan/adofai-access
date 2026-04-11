@@ -1,4 +1,3 @@
-using DavyKager;
 using HarmonyLib;
 using MelonLoader;
 using System.Collections.Generic;
@@ -22,7 +21,7 @@ namespace ADOFAI_Access
         public override void OnInitializeMelon()
         {
             ModSettings.EnsureLoaded();
-            Tolk.Load();
+            PrismSpeech.Load();
             HarmonyInstance.PatchAll(typeof(Core).Assembly);
             LoggerInstance.Msg("ADOFAI Access Loaded");
         }
@@ -31,7 +30,7 @@ namespace ADOFAI_Access
         {
             if (ModSettings.Current.menuNarrationEnabled)
             {
-                Tolk.Output($"ADOFAI Access loaded, version {ModVersion}");
+                PrismSpeech.Output($"ADOFAI Access loaded, version {ModVersion}");
             }
         }
 

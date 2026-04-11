@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text;
-using DavyKager;
 using MelonLoader;
 using UnityEngine;
 
@@ -180,7 +179,7 @@ namespace ADOFAI_Access
             }
             catch
             {
-                Tolk.Output(text, true);
+                PrismSpeech.Output(text, true);
             }
         }
 

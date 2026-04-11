@@ -1,6 +1,4 @@
 using UnityEngine;
-using DavyKager;
-
 namespace ADOFAI_Access
 {
     internal static class AccessSettingsMenu
@@ -327,7 +325,7 @@ namespace ADOFAI_Access
             }
             else
             {
-                Tolk.Output(text, interrupt);
+                PrismSpeech.Output(text, interrupt);
             }
         }
     }

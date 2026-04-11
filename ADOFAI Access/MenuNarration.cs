@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Reflection;
 using System.Text.RegularExpressions;
-using DavyKager;
 using HarmonyLib;
 using TMPro;
 using UnityEngine;
@@ -423,7 +422,7 @@ namespace ADOFAI_Access
 
             _lastSpoken = normalized;
             _lastSpokenAt = now;
-            Tolk.Output(normalized, interrupt);
+            PrismSpeech.Output(normalized, interrupt);
         }
 
         public static void SpeakForced(string text, bool interrupt)
@@ -436,7 +435,7 @@ namespace ADOFAI_Access
 
             _lastSpoken = normalized;
             _lastSpokenAt = Time.unscaledTime;
-            Tolk.Output(normalized, interrupt);
+            PrismSpeech.Output(normalized, interrupt);
         }
 
         public static void SpeakWorldSelection(string world)

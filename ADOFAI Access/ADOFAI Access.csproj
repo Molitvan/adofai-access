@@ -432,7 +432,13 @@
 		<Compile Include="MenuNarration.cs" />
 		<Compile Include="ModSettings.cs" />
 		<Compile Include="TapCueService.cs" />
-		<Compile Include="Tolk.cs" />
+		<Compile Include="PrismSpeech.cs" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Content Include="Native\win-x64\prism.dll">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
 	</ItemGroup>
 
 	<ItemGroup>
@@ -449,5 +455,7 @@
 	
 	<Target Name="PostBuild" AfterTargets="PostBuildEvent">
 		<Exec Command="COPY &quot;$(TargetPath)&quot; &quot;D:\Programiranje\C#\A Dance of Fire and Ice Mod\game\Mods&quot;" />
+		<Exec Command="COPY &quot;$(ProjectDir)Native\win-x64\prism.dll&quot; &quot;$(TargetDir)&quot;" />
+		<Exec Command="COPY &quot;$(ProjectDir)Native\win-x64\prism.dll&quot; &quot;D:\Programiranje\C#\A Dance of Fire and Ice Mod\game\UserLibs&quot;" />
 	</Target>
 </Project>
