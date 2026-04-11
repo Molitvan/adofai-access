@@ -1,10 +1,80 @@
+using System;
 using UnityEngine;
+
 namespace ADOFAI_Access
 {
     internal static class AccessSettingsMenu
     {
         private const KeyCode ToggleKey = KeyCode.F5;
-        private const int OptionCount = 7;
+
+        private sealed class SettingOption
+        {
+            public string Label;
+            public string ControlType;
+            public Func<ModSettingsData, string> GetValue;
+            public Action<ModSettingsData, int> Change;
+            public Action<ModSettingsData> Activate;
+        }
+
+        private static readonly SettingOption[] Options =
+        {
+            new SettingOption
+            {
+                Label = "Menu narration",
+                ControlType = "toggle",
+                GetValue = settings => settings.menuNarrationEnabled ? "on" : "off",
+                Change = (settings, delta) => settings.menuNarrationEnabled = delta > 0,
+                Activate = settings => settings.menuNarrationEnabled = !settings.menuNarrationEnabled
+            },
+            new SettingOption
+            {
+                Label = "Play mode",
+                ControlType = "option",
+                GetValue = settings => PatternPreview.GetModeLabel(settings.playMode),
+                Change = (_, delta) => PatternPreview.StepMode(delta, speak: false),
+                Activate = _ => PatternPreview.StepMode(1, speak: false)
+            },
+            new SettingOption
+            {
+                Label = "Pattern preview beats ahead",
+                ControlType = "setting",
+                GetValue = settings => settings.patternPreviewBeatsAhead.ToString(),
+                Change = (settings, delta) => settings.patternPreviewBeatsAhead = StepBeatSetting(settings.patternPreviewBeatsAhead, delta),
+                Activate = settings => settings.patternPreviewBeatsAhead = WrapBeatSetting(settings.patternPreviewBeatsAhead)
+            },
+            new SettingOption
+            {
+                Label = "Listen-repeat group beats",
+                ControlType = "setting",
+                GetValue = settings => settings.listenRepeatGroupBeats.ToString(),
+                Change = (settings, delta) => settings.listenRepeatGroupBeats = StepBeatSetting(settings.listenRepeatGroupBeats, delta),
+                Activate = settings => settings.listenRepeatGroupBeats = WrapBeatSetting(settings.listenRepeatGroupBeats)
+            },
+            new SettingOption
+            {
+                Label = "Listen-repeat ducking",
+                ControlType = "toggle",
+                GetValue = settings => settings.listenRepeatAudioDuckingEnabled ? "on" : "off",
+                Change = (settings, delta) => settings.listenRepeatAudioDuckingEnabled = delta > 0,
+                Activate = settings => settings.listenRepeatAudioDuckingEnabled = !settings.listenRepeatAudioDuckingEnabled
+            },
+            new SettingOption
+            {
+                Label = "Listen-repeat start/end cue",
+                ControlType = "option",
+                GetValue = settings => GetCueModeLabel(settings.listenRepeatStartEndCueMode),
+                Change = (settings, delta) => settings.listenRepeatStartEndCueMode = GetNextCueMode(settings.listenRepeatStartEndCueMode, delta),
+                Activate = settings => settings.listenRepeatStartEndCueMode = GetNextCueMode(settings.listenRepeatStartEndCueMode, 1)
+            },
+            new SettingOption
+            {
+                Label = "ADOFAI Access version",
+                ControlType = "button",
+                GetValue = _ => Core.VersionString,
+                Change = null,
+                Activate = null
+            }
+        };
 
         private static bool _open;
         private static int _selectedIndex;
@@ -43,14 +113,14 @@ namespace ADOFAI_Access
 
             if (Input.GetKeyDown(KeyCode.UpArrow))
             {
-                _selectedIndex = (_selectedIndex + OptionCount - 1) % OptionCount;
+                _selectedIndex = (_selectedIndex + Options.Length - 1) % Options.Length;
                 SpeakCurrentOption();
                 return;
             }
 
             if (Input.GetKeyDown(KeyCode.DownArrow))
             {
-                _selectedIndex = (_selectedIndex + 1) % OptionCount;
+                _selectedIndex = (_selectedIndex + 1) % Options.Length;
                 SpeakCurrentOption();
                 return;
             }
@@ -129,159 +199,89 @@ namespace ADOFAI_Access
 
         private static void ChangeCurrentOption(int delta)
         {
-            ModSettingsData settings = ModSettings.Current;
-            switch (_selectedIndex)
-            {
-                case 0:
-                    settings.menuNarrationEnabled = delta > 0;
-                    break;
-                case 1:
-                    PatternPreview.StepMode(delta, speak: false);
-                    break;
-                case 2:
-                    settings.patternPreviewBeatsAhead += delta;
-                    if (settings.patternPreviewBeatsAhead < 1)
-                    {
-                        settings.patternPreviewBeatsAhead = 1;
-                    }
-                    else if (settings.patternPreviewBeatsAhead > 16)
-                    {
-                        settings.patternPreviewBeatsAhead = 16;
-                    }
-                    break;
-                case 3:
-                    settings.listenRepeatGroupBeats += delta;
-                    if (settings.listenRepeatGroupBeats < 1)
-                    {
-                        settings.listenRepeatGroupBeats = 1;
-                    }
-                    else if (settings.listenRepeatGroupBeats > 16)
-                    {
-                        settings.listenRepeatGroupBeats = 16;
-                    }
-                    break;
-                case 4:
-                    settings.listenRepeatAudioDuckingEnabled = delta > 0;
-                    break;
-                case 5:
-                    settings.listenRepeatStartEndCueMode = GetNextCueMode(settings.listenRepeatStartEndCueMode, delta);
-                    break;
-                case 6:
-                    SpeakCurrentValue();
-                    return;
-            }
-
-            ModSettings.Save();
-            if (_selectedIndex == 0 && !settings.menuNarrationEnabled)
-            {
-                SpeakAlways("Menu narration off. You can always turn menu narration back on with F4.", true);
-            }
-            else
+            SettingOption option = Options[_selectedIndex];
+            if (option.Change == null)
             {
                 SpeakCurrentValue();
+                return;
             }
+
+            ModSettingsData settings = ModSettings.Current;
+            option.Change(settings, delta);
+            ModSettings.Save();
+            SpeakChangedValue(settings);
         }
 
         private static void ToggleCurrentOption()
         {
-            ModSettingsData settings = ModSettings.Current;
-            switch (_selectedIndex)
-            {
-                case 0:
-                    settings.menuNarrationEnabled = !settings.menuNarrationEnabled;
-                    break;
-                case 1:
-                    PatternPreview.StepMode(1, speak: false);
-                    break;
-                case 2:
-                    settings.patternPreviewBeatsAhead = settings.patternPreviewBeatsAhead >= 16 ? 1 : settings.patternPreviewBeatsAhead + 1;
-                    break;
-                case 3:
-                    settings.listenRepeatGroupBeats = settings.listenRepeatGroupBeats >= 16 ? 1 : settings.listenRepeatGroupBeats + 1;
-                    break;
-                case 4:
-                    settings.listenRepeatAudioDuckingEnabled = !settings.listenRepeatAudioDuckingEnabled;
-                    break;
-                case 5:
-                    settings.listenRepeatStartEndCueMode = GetNextCueMode(settings.listenRepeatStartEndCueMode, 1);
-                    break;
-                case 6:
-                    SpeakCurrentValue();
-                    return;
-            }
-
-            ModSettings.Save();
-            if (_selectedIndex == 0 && !settings.menuNarrationEnabled)
-            {
-                SpeakAlways("Menu narration off. You can always turn menu narration back on with F4.", true);
-            }
-            else
+            SettingOption option = Options[_selectedIndex];
+            if (option.Activate == null)
             {
                 SpeakCurrentValue();
+                return;
             }
+
+            ModSettingsData settings = ModSettings.Current;
+            option.Activate(settings);
+            ModSettings.Save();
+            SpeakChangedValue(settings);
         }
 
         private static void SpeakCurrentOption()
         {
             ModSettingsData settings = ModSettings.Current;
-            switch (_selectedIndex)
-            {
-                case 0:
-                    MenuNarration.Speak($"Menu narration, {(settings.menuNarrationEnabled ? "on" : "off")}, toggle, 1 of 7", interrupt: true);
-                    break;
-                case 1:
-                    MenuNarration.Speak($"Play mode, {PatternPreview.GetModeLabel(settings.playMode)}, option, 2 of 7", interrupt: true);
-                    break;
-                case 2:
-                    MenuNarration.Speak($"Pattern preview beats ahead, {settings.patternPreviewBeatsAhead}, setting, 3 of 7", interrupt: true);
-                    break;
-                case 3:
-                    MenuNarration.Speak($"Listen-repeat group beats, {settings.listenRepeatGroupBeats}, setting, 4 of 7", interrupt: true);
-                    break;
-                case 4:
-                    MenuNarration.Speak($"Listen-repeat ducking, {(settings.listenRepeatAudioDuckingEnabled ? "on" : "off")}, toggle, 5 of 7", interrupt: true);
-                    break;
-                case 5:
-                    MenuNarration.Speak($"Listen-repeat start/end cue, {GetCueModeLabel(settings.listenRepeatStartEndCueMode)}, option, 6 of 7", interrupt: true);
-                    break;
-                case 6:
-                    MenuNarration.Speak($"ADOFAI Access version, {Core.VersionString}, button, 7 of 7", interrupt: true);
-                    break;
-            }
+            SettingOption option = Options[_selectedIndex];
+            string value = option.GetValue != null ? option.GetValue(settings) : string.Empty;
+            MenuNarration.Speak(
+                $"{option.Label}, {value}, {option.ControlType}, {_selectedIndex + 1} of {Options.Length}",
+                interrupt: true);
         }
 
         private static void SpeakCurrentValue()
         {
             ModSettingsData settings = ModSettings.Current;
-            switch (_selectedIndex)
+            SettingOption option = Options[_selectedIndex];
+            string value = option.GetValue != null ? option.GetValue(settings) : string.Empty;
+            SpeakAlways(value, true);
+        }
+
+        private static void SpeakChangedValue(ModSettingsData settings)
+        {
+            if (_selectedIndex == 0 && !settings.menuNarrationEnabled)
             {
-                case 0:
-                    SpeakAlways(settings.menuNarrationEnabled ? "on" : "off", true);
-                    break;
-                case 1:
-                    SpeakAlways(PatternPreview.GetModeLabel(settings.playMode), true);
-                    break;
-                case 2:
-                    SpeakAlways(settings.patternPreviewBeatsAhead.ToString(), true);
-                    break;
-                case 3:
-                    SpeakAlways(settings.listenRepeatGroupBeats.ToString(), true);
-                    break;
-                case 4:
-                    SpeakAlways(settings.listenRepeatAudioDuckingEnabled ? "on" : "off", true);
-                    break;
-                case 5:
-                    SpeakAlways(GetCueModeLabel(settings.listenRepeatStartEndCueMode), true);
-                    break;
-                case 6:
-                    SpeakAlways(Core.VersionString, true);
-                    break;
+                SpeakAlways("Menu narration off. You can always turn menu narration back on with F4.", true);
+                return;
             }
+
+            SettingOption option = Options[_selectedIndex];
+            string value = option.GetValue != null ? option.GetValue(settings) : string.Empty;
+            SpeakAlways(value, true);
+        }
+
+        private static int StepBeatSetting(int currentValue, int delta)
+        {
+            int next = currentValue + delta;
+            if (next < 1)
+            {
+                return 1;
+            }
+
+            if (next > 16)
+            {
+                return 16;
+            }
+
+            return next;
+        }
+
+        private static int WrapBeatSetting(int currentValue)
+        {
+            return currentValue >= 16 ? 1 : currentValue + 1;
         }
 
         private static ListenRepeatStartEndCueMode GetNextCueMode(ListenRepeatStartEndCueMode current, int delta)
         {
-            ListenRepeatStartEndCueMode[] cycle = new[]
+            ListenRepeatStartEndCueMode[] cycle =
             {
                 ListenRepeatStartEndCueMode.Sound,
                 ListenRepeatStartEndCueMode.Speech,
