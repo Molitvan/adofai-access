@@ -294,28 +294,6 @@ namespace ADOFAI_Access
 
         private static void BuildLevelSelectEntries()
         {
-            AddEntry("Open settings", () =>
-            {
-                Close(speak: false);
-                scrController controller = ADOBase.controller;
-                if (controller?.takeScreenshot != null)
-                {
-                    MenuNarration.Speak("Opening settings", interrupt: true);
-                    controller.takeScreenshot.ShowPauseMenu(goToSettings: true);
-                }
-            });
-
-            AddEntry("Open pause menu", () =>
-            {
-                Close(speak: false);
-                scrController controller = ADOBase.controller;
-                if (controller?.takeScreenshot != null)
-                {
-                    MenuNarration.Speak("Opening pause menu", interrupt: true);
-                    controller.takeScreenshot.ShowPauseMenu(goToSettings: false);
-                }
-            });
-
             AddEntry("Open calibration", () =>
             {
                 Close(speak: false);
