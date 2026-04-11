@@ -42,7 +42,7 @@ namespace ADOFAI_Access
             CustomMenuInputGuard.Tick();
             LevelDataDump.Tick();
             LevelPreview.Tick();
-            PatternPreview.Tick();
+            PlayModeController.Tick();
         }
     }
 

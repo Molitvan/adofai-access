@@ -179,7 +179,7 @@ namespace ADOFAI_Access
         {
             TapCueService.StopAllCues();
             ApplyListenDucking(ADOBase.conductor, shouldDuck: false);
-            PatternPreview.RestoreAuto();
+            PlayModeController.RestoreAuto();
             ResetRunState();
         }
 

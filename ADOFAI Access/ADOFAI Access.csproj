@@ -429,6 +429,7 @@
 		<Compile Include="LevelDataDump.cs" />
 		<Compile Include="ListenRepeatMode.cs" />
 		<Compile Include="PatternPreview.cs" />
+		<Compile Include="PlayModeController.cs" />
 		<Compile Include="PlayModeTiming.cs" />
 		<Compile Include="LevelPreview.cs" />
 		<Compile Include="MenuNarration.cs" />

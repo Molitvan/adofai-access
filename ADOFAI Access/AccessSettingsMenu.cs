@@ -30,9 +30,9 @@ namespace ADOFAI_Access
             {
                 Label = "Play mode",
                 ControlType = "option",
-                GetValue = settings => PatternPreview.GetModeLabel(settings.playMode),
-                Change = (_, delta) => PatternPreview.StepMode(delta, speak: false),
-                Activate = _ => PatternPreview.StepMode(1, speak: false)
+                GetValue = settings => PlayModeController.GetModeLabel(settings.playMode),
+                Change = (_, delta) => PlayModeController.StepMode(delta, speak: false),
+                Activate = _ => PlayModeController.StepMode(1, speak: false)
             },
             new SettingOption
             {
