@@ -67,7 +67,7 @@ namespace ADOFAI_Access
             }
 
             double nowDsp = conductor.dspTime;
-            int beatsPerGroup = Math.Max(1, ModSettings.Current.patternPreviewBeatsAhead);
+            int beatsPerGroup = Math.Max(1, ModSettings.Current.listenRepeatGroupBeats);
             int groupIndex = Mathf.FloorToInt((float)(currentBeat / beatsPerGroup));
             int phase = (groupIndex & 1) == 0 ? 0 : 1;
             if (HandleCheckpointRecovery(conductor, currentBeat, beatsPerGroup))
@@ -138,7 +138,7 @@ namespace ADOFAI_Access
                 return;
             }
 
-            int beatsPerGroup = Math.Max(1, ModSettings.Current.patternPreviewBeatsAhead);
+            int beatsPerGroup = Math.Max(1, ModSettings.Current.listenRepeatGroupBeats);
             double currentBeat = current.entryBeat;
             int currentGroupIndex = Mathf.FloorToInt((float)(currentBeat / beatsPerGroup));
             double currentGroupStartBeat = currentGroupIndex * (double)beatsPerGroup;

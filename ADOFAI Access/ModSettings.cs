@@ -26,6 +26,7 @@ namespace ADOFAI_Access
         public bool menuNarrationEnabled = true;
         public PlayMode playMode = PlayMode.Vanilla;
         public int patternPreviewBeatsAhead = 4;
+        public int listenRepeatGroupBeats = 0;
         public bool listenRepeatAudioDuckingEnabled = true;
         public ListenRepeatStartEndCueMode listenRepeatStartEndCueMode = ListenRepeatStartEndCueMode.Sound;
     }
@@ -109,14 +110,14 @@ namespace ADOFAI_Access
                 _current = new ModSettingsData();
             }
 
-            if (_current.patternPreviewBeatsAhead <= 0)
+            _current.patternPreviewBeatsAhead = ClampBeatSetting(_current.patternPreviewBeatsAhead, 4);
+
+            if (_current.listenRepeatGroupBeats <= 0)
             {
-                _current.patternPreviewBeatsAhead = 4;
+                // Migrate legacy shared beat-count behavior for older settings files.
+                _current.listenRepeatGroupBeats = _current.patternPreviewBeatsAhead;
             }
-            else if (_current.patternPreviewBeatsAhead > 16)
-            {
-                _current.patternPreviewBeatsAhead = 16;
-            }
+            _current.listenRepeatGroupBeats = ClampBeatSetting(_current.listenRepeatGroupBeats, 4);
 
             if (!Enum.IsDefined(typeof(PlayMode), _current.playMode))
             {
@@ -127,6 +128,21 @@ namespace ADOFAI_Access
             {
                 _current.listenRepeatStartEndCueMode = ListenRepeatStartEndCueMode.Sound;
             }
+        }
+
+        private static int ClampBeatSetting(int value, int fallback)
+        {
+            if (value <= 0)
+            {
+                return fallback;
+            }
+
+            if (value > 16)
+            {
+                return 16;
+            }
+
+            return value;
         }
 
         private static string GetSettingsPath()
