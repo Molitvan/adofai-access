@@ -351,7 +351,7 @@ namespace ADOFAI_Access
             {
                 string worldId = portal.world;
                 bool locked = portal.locked || !IsWorldReachableByProgress(worldId);
-                string label = $"Enter world {DisplayWorldId(worldId)}";
+                string label = BuildWorldProgressEntryLabel(worldId);
                 string targetWorld = worldId;
                 AddEntry(label, () =>
                 {
@@ -779,7 +779,7 @@ namespace ADOFAI_Access
             foreach (string worldId in worlds)
             {
                 bool locked = TryGetPortal(worldId, out scrPortal portal) && portal.locked;
-                string label = $"Enter world {DisplayTaroWorldId(worldId)}";
+                string label = BuildTaroWorldProgressEntryLabel(worldId);
                 AddEntry(label, () =>
                 {
                     Close(speak: false);
@@ -1008,6 +1008,54 @@ namespace ADOFAI_Access
             }
 
             return value.ToString("0.##", CultureInfo.InvariantCulture) + " x";
+        }
+
+        private static string BuildWorldProgressEntryLabel(string worldId)
+        {
+            return BuildWorldProgressEntryLabel(worldId, DisplayWorldId(worldId));
+        }
+
+        private static string BuildTaroWorldProgressEntryLabel(string worldId)
+        {
+            return BuildWorldProgressEntryLabel(worldId, DisplayTaroWorldId(worldId));
+        }
+
+        private static string BuildWorldProgressEntryLabel(string worldId, string displayWorldId)
+        {
+            string label = $"World {displayWorldId}";
+            if (string.IsNullOrWhiteSpace(worldId) || !GCNS.worldData.TryGetValue(worldId, out GCNS.WorldData worldData))
+            {
+                return label;
+            }
+
+            string completion = FormatWorldCompletion(Persistence.GetPercentCompletion(worldData.index));
+            string speedTrial = FormatWorldSpeedTrial(Persistence.GetBestSpeedMultiplier(worldData.index));
+            return $"{label}, {completion} complete, Best speed trial: {speedTrial}";
+        }
+
+        private static string FormatWorldCompletion(float value)
+        {
+            if (float.IsNaN(value) || float.IsInfinity(value))
+            {
+                return "unavailable";
+            }
+
+            return (Mathf.Clamp01(value) * 100f).ToString("0.##", CultureInfo.InvariantCulture) + "%";
+        }
+
+        private static string FormatWorldSpeedTrial(float value)
+        {
+            if (float.IsNaN(value) || float.IsInfinity(value))
+            {
+                return "unavailable";
+            }
+
+            if (value <= 0f)
+            {
+                return "none recorded";
+            }
+
+            return value.ToString("0.##", CultureInfo.InvariantCulture) + "x";
         }
 
         private static string NormalizeForSpeech(string value)
