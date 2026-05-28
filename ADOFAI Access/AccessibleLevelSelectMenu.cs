@@ -344,6 +344,7 @@ namespace ADOFAI_Access
                 .Where(p => p != null)
                 .Where(p => p.gameObject != null && p.gameObject.activeInHierarchy)
                 .Where(p => !p.hidden)
+                .Where(p => IsDirectAccessibleWorldPortal(p.world))
                 .OrderBy(p => WorldSortKey(p.world))
                 .ThenBy(p => p.world, StringComparer.Ordinal);
 
@@ -1107,6 +1108,35 @@ namespace ADOFAI_Access
 
             bool isXtraOrMuseDash = world.IsXtra() || isMuseDashWorld;
             if (overallProgressStage < 5 && isXtraOrMuseDash && !isCrownWorld && !isMuseDashWorld)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool IsDirectAccessibleWorldPortal(string world)
+        {
+            if (string.IsNullOrWhiteSpace(world))
+            {
+                return false;
+            }
+
+            if (!GCNS.worldData.TryGetValue(world, out GCNS.WorldData worldData))
+            {
+                return false;
+            }
+
+            if (worldData.doNotBuild || worldData.notRealWorld)
+            {
+                return false;
+            }
+
+            // The CR2024 island currently exposes CT as a raw portal object, but
+            // vanilla does not route it as a normal direct world selection.
+            if (worldData.isCR2024
+                && !string.Equals(world, "CE", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(world, "CETX", StringComparison.OrdinalIgnoreCase))
             {
                 return false;
             }
