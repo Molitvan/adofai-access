@@ -93,9 +93,6 @@
 		<Reference Include="Unity.Addressables">
 			<HintPath>$(MSBuildThisFileDirectory)..\\..\\game\A Dance of Fire and Ice_Data\Managed\Unity.Addressables.dll</HintPath>
 		</Reference>
-		<Reference Include="Unity.AI.Navigation">
-			<HintPath>$(MSBuildThisFileDirectory)..\\..\\game\A Dance of Fire and Ice_Data\Managed\Unity.AI.Navigation.dll</HintPath>
-		</Reference>
 		<Reference Include="Unity.Burst">
 			<HintPath>$(MSBuildThisFileDirectory)..\\..\\game\A Dance of Fire and Ice_Data\Managed\Unity.Burst.dll</HintPath>
 		</Reference>
@@ -164,9 +161,6 @@
 		</Reference>
 		<Reference Include="Unity.TextMeshPro">
 			<HintPath>$(MSBuildThisFileDirectory)..\\..\\game\A Dance of Fire and Ice_Data\Managed\Unity.TextMeshPro.dll</HintPath>
-		</Reference>
-		<Reference Include="Unity.Timeline">
-			<HintPath>$(MSBuildThisFileDirectory)..\\..\\game\A Dance of Fire and Ice_Data\Managed\Unity.Timeline.dll</HintPath>
 		</Reference>
 		<Reference Include="UnityEngine.AccessibilityModule">
 			<HintPath>$(MSBuildThisFileDirectory)..\\..\\game\A Dance of Fire and Ice_Data\Managed\UnityEngine.AccessibilityModule.dll</HintPath>

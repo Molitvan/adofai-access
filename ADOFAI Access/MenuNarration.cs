@@ -202,14 +202,14 @@ namespace ADOFAI_Access
                 return;
             }
 
-            OptionsPanelsCLS.Option[] options = leftOpen ? panel.leftPanelOptions : panel.rightPanelOptions;
+            List<OptionsPanelsCLS.Option> options = leftOpen ? panel.leftPanelOptions : panel.rightPanelOptions;
             if (options == null)
             {
                 return;
             }
 
             OptionsPanelsCLS.Option focused = null;
-            for (int i = 0; i < options.Length; i++)
+            for (int i = 0; i < options.Count; i++)
             {
                 OptionsPanelsCLS.Option option = options[i];
                 if (option != null && option.highlighted)
@@ -589,7 +589,7 @@ namespace ADOFAI_Access
             Speak(completionText, interrupt: true);
         }
 
-        public static void SpeakCalibrationMessage(scrCalibrationPlanet calibration)
+        public static void SpeakCalibrationMessage(scnCalibration calibration)
         {
             if (ADOBase.isLevelEditor || calibration == null)
             {
@@ -600,7 +600,7 @@ namespace ADOFAI_Access
             Speak(BestOf(text, "Calibration"), interrupt: true);
         }
 
-        public static void SpeakCalibrationResults(scrCalibrationPlanet calibration)
+        public static void SpeakCalibrationResults(scnCalibration calibration)
         {
             if (ADOBase.isLevelEditor || calibration == null)
             {
@@ -656,8 +656,8 @@ namespace ADOFAI_Access
                 return;
             }
 
-            OptionsPanelsCLS.Option[] options = panel.showingLeftPanel ? panel.leftPanelOptions : panel.rightPanelOptions;
-            if (options == null || optionIndex < 0 || optionIndex >= options.Length)
+            List<OptionsPanelsCLS.Option> options = panel.showingLeftPanel ? panel.leftPanelOptions : panel.rightPanelOptions;
+            if (options == null || optionIndex < 0 || optionIndex >= options.Count)
             {
                 return;
             }
@@ -672,13 +672,13 @@ namespace ADOFAI_Access
                 return;
             }
 
-            OptionsPanelsCLS.Option[] options = leftOptions ? panel.leftPanelOptions : panel.rightPanelOptions;
+            List<OptionsPanelsCLS.Option> options = leftOptions ? panel.leftPanelOptions : panel.rightPanelOptions;
             if (options == null)
             {
                 return;
             }
 
-            for (int i = 0; i < options.Length; i++)
+            for (int i = 0; i < options.Count; i++)
             {
                 OptionsPanelsCLS.Option option = options[i];
                 if (option != null && option.name == name)
@@ -1517,10 +1517,10 @@ namespace ADOFAI_Access
         }
     }
 
-    [HarmonyPatch(typeof(scrCalibrationPlanet), "Start")]
+    [HarmonyPatch(typeof(scnCalibration), "Start")]
     internal static class CalibrationStartPatch
     {
-        private static void Postfix(scrCalibrationPlanet __instance)
+        private static void Postfix(scnCalibration __instance)
         {
             if (!ModSettings.Current.menuNarrationEnabled)
             {
@@ -1532,19 +1532,19 @@ namespace ADOFAI_Access
         }
     }
 
-    [HarmonyPatch(typeof(scrCalibrationPlanet), "SetMessageNumber")]
+    [HarmonyPatch(typeof(scnCalibration), "SetMessageNumber")]
     internal static class CalibrationMessagePatch
     {
-        private static void Postfix(scrCalibrationPlanet __instance)
+        private static void Postfix(scnCalibration __instance)
         {
             MenuNarration.SpeakCalibrationMessage(__instance);
         }
     }
 
-    [HarmonyPatch(typeof(scrCalibrationPlanet), "PostSong")]
-    internal static class CalibrationPostSongPatch
+    [HarmonyPatch(typeof(scnCalibration), "Calibrated")]
+    internal static class CalibrationCalibratedPatch
     {
-        private static void Postfix(scrCalibrationPlanet __instance)
+        private static void Postfix(scnCalibration __instance)
         {
             MenuNarration.SpeakCalibrationResults(__instance);
         }

@@ -215,7 +215,7 @@ namespace ADOFAI_Access
                     ["levelCount"] = w.levelCount,
                     ["trialAim"] = w.trialAim,
                     ["hasCheckpoints"] = w.hasCheckpoints,
-                    ["internalLevel"] = w.internalLevel,
+                    ["levelSource"] = w.levelSource.ToString(),
                     ["isDLC"] = w.isDLC,
                     ["medalCount"] = w.medalCount,
                     ["requiredMedals"] = w.requiredMedals,
@@ -293,14 +293,14 @@ namespace ADOFAI_Access
                 },
                 ["settings"] = new Dictionary<string, object>
                 {
-                    ["songSettings"] = ConvertValue(levelData.songSettings != null ? levelData.songSettings.data : null),
-                    ["levelSettings"] = ConvertValue(levelData.levelSettings != null ? levelData.levelSettings.data : null),
-                    ["trackSettings"] = ConvertValue(levelData.trackSettings != null ? levelData.trackSettings.data : null),
-                    ["backgroundSettings"] = ConvertValue(levelData.backgroundSettings != null ? levelData.backgroundSettings.data : null),
-                    ["cameraSettings"] = ConvertValue(levelData.cameraSettings != null ? levelData.cameraSettings.data : null),
-                    ["miscSettings"] = ConvertValue(levelData.miscSettings != null ? levelData.miscSettings.data : null),
-                    ["eventSettings"] = ConvertValue(levelData.eventSettings != null ? levelData.eventSettings.data : null),
-                    ["decorationSettings"] = ConvertValue(levelData.decorationSettings != null ? levelData.decorationSettings.data : null)
+                    ["songSettings"] = ConvertValue(levelData.songSettings != null ? levelData.songSettings.GetData() : null),
+                    ["levelSettings"] = ConvertValue(levelData.levelSettings != null ? levelData.levelSettings.GetData() : null),
+                    ["trackSettings"] = ConvertValue(levelData.trackSettings != null ? levelData.trackSettings.GetData() : null),
+                    ["backgroundSettings"] = ConvertValue(levelData.backgroundSettings != null ? levelData.backgroundSettings.GetData() : null),
+                    ["cameraSettings"] = ConvertValue(levelData.cameraSettings != null ? levelData.cameraSettings.GetData() : null),
+                    ["miscSettings"] = ConvertValue(levelData.miscSettings != null ? levelData.miscSettings.GetData() : null),
+                    ["eventSettings"] = ConvertValue(levelData.eventSettings != null ? levelData.eventSettings.GetData() : null),
+                    ["decorationSettings"] = ConvertValue(levelData.decorationSettings != null ? levelData.decorationSettings.GetData() : null)
                 },
                 ["actions"] = BuildEvents(levelData.levelEvents),
                 ["decorations"] = BuildEvents(levelData.decorations)
@@ -331,7 +331,7 @@ namespace ADOFAI_Access
                     ["visible"] = ev.visible,
                     ["locked"] = ev.locked,
                     ["isDecoration"] = ev.IsDecoration,
-                    ["data"] = ConvertValue(ev.data),
+                    ["data"] = ConvertValue(ev.GetData()),
                     ["disabled"] = ConvertValue(ev.disabled)
                 });
             }

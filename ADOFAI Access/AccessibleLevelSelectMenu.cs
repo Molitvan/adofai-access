@@ -558,7 +558,7 @@ namespace ADOFAI_Access
                     return;
                 }
 
-                cls.ToggleSearchMode(search: true);
+                cls.optionsPanels.StartCoroutine(cls.optionsPanels.ToggleSearchMode(search: true));
                 string query = NormalizeForSpeech(cls.optionsPanels.searchInputField != null ? cls.optionsPanels.searchInputField.text : string.Empty);
                 string value = string.IsNullOrWhiteSpace(query) ? "empty" : query;
                 MenuNarration.Speak($"Find, text field, {value}", interrupt: true);
@@ -674,9 +674,9 @@ namespace ADOFAI_Access
             {
                 int worldIndex = scrController.currentWorld;
                 float completion = Persistence.GetPercentCompletion(worldIndex);
-                float bestAcc = Persistence.GetBestPercentAccuracy(worldIndex);
-                float bestXAcc = Persistence.GetBestPercentXAccuracy(worldIndex);
-                float bestSpeed = Persistence.GetBestSpeedMultiplier(worldIndex);
+                float bestAcc = Persistence.GetBestPercentAccuracy(worldIndex, coop: false);
+                float bestXAcc = Persistence.GetBestPercentXAccuracy(worldIndex, coop: false);
+                float bestSpeed = Persistence.GetBestSpeedMultiplier(worldIndex, coop: false);
 
                 AddEntry("Read best record summary", () =>
                 {
@@ -696,9 +696,9 @@ namespace ADOFAI_Access
                     MenuNarration.Speak(string.Join(". ", parts) + ".", interrupt: true);
                 });
                 AddEntry("Read completion", () => SpeakNamedStat("Completion", FormatPercentStat(Persistence.GetPercentCompletion(worldIndex))));
-                AddEntry("Read best accuracy", () => SpeakNamedStat("Best accuracy", FormatPercentStat(Persistence.GetBestPercentAccuracy(worldIndex))));
-                AddEntry("Read best X accuracy", () => SpeakNamedStat("Best X accuracy", FormatPercentStat(Persistence.GetBestPercentXAccuracy(worldIndex))));
-                AddEntry("Read best speed trial", () => SpeakNamedStat("Best speed trial", FormatSpeedTrialStat(Persistence.GetBestSpeedMultiplier(worldIndex))));
+                AddEntry("Read best accuracy", () => SpeakNamedStat("Best accuracy", FormatPercentStat(Persistence.GetBestPercentAccuracy(worldIndex, coop: false))));
+                AddEntry("Read best X accuracy", () => SpeakNamedStat("Best X accuracy", FormatPercentStat(Persistence.GetBestPercentXAccuracy(worldIndex, coop: false))));
+                AddEntry("Read best speed trial", () => SpeakNamedStat("Best speed trial", FormatSpeedTrialStat(Persistence.GetBestSpeedMultiplier(worldIndex, coop: false))));
                 return;
             }
 
@@ -1029,7 +1029,7 @@ namespace ADOFAI_Access
             }
 
             string completion = FormatWorldCompletion(Persistence.GetPercentCompletion(worldData.index));
-            string speedTrial = FormatWorldSpeedTrial(Persistence.GetBestSpeedMultiplier(worldData.index));
+            string speedTrial = FormatWorldSpeedTrial(Persistence.GetBestSpeedMultiplier(worldData.index, coop: false));
             return $"{label}, {completion} complete, Best speed trial: {speedTrial}";
         }
 
