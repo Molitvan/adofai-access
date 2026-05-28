@@ -377,6 +377,42 @@ namespace ADOFAI_Access
             Speak(ComposePhrase(label, controlType, valueState), interrupt: true);
         }
 
+        public static void SpeakPlayerSelectButton(PlayerSelectButton button)
+        {
+            if (AccessSettingsMenu.IsOpen || !ModSettings.Current.menuNarrationEnabled || button == null || ADOBase.isLevelEditor)
+            {
+                return;
+            }
+
+            if (!TryDescribePlayerSelectButton(button, out string label, out string controlType, out string valueState))
+            {
+                return;
+            }
+
+            Speak(ComposePhrase(label, controlType, valueState), interrupt: true);
+        }
+
+        public static void SpeakPlayerSelectControllerChange(PlayerSelectButton button)
+        {
+            if (AccessSettingsMenu.IsOpen || !ModSettings.Current.menuNarrationEnabled || button == null || ADOBase.isLevelEditor)
+            {
+                return;
+            }
+
+            PauseMenu pauseMenu = ADOBase.controller != null ? ADOBase.controller.pauseMenu : null;
+            PlayerSelect playerSelect = pauseMenu != null ? pauseMenu.playerSelect : null;
+            if (pauseMenu == null || playerSelect == null || pauseMenu.currentPauseButton != button || !playerSelect.playersSelected.HasValue || playerSelect.waitingForInput)
+            {
+                return;
+            }
+
+            string controller = NormalizeControllerType(button);
+            if (!string.IsNullOrEmpty(controller))
+            {
+                Speak(controller, interrupt: true);
+            }
+        }
+
         public static void SpeakSettingValueChange(PauseSettingButton settingButton, SettingsMenu.Interaction action)
         {
             if (AccessSettingsMenu.IsOpen || !ModSettings.Current.menuNarrationEnabled || settingButton == null || ADOBase.isLevelEditor)
@@ -399,6 +435,51 @@ namespace ADOFAI_Access
             }
 
             Speak(normalizedValue, interrupt: true);
+        }
+
+        private static bool TryDescribePlayerSelectButton(PlayerSelectButton button, out string label, out string controlType, out string valueState)
+        {
+            label = string.Empty;
+            controlType = "button";
+            valueState = string.Empty;
+
+            PauseMenu pauseMenu = ADOBase.controller != null ? ADOBase.controller.pauseMenu : null;
+            PlayerSelect playerSelect = pauseMenu != null ? pauseMenu.playerSelect : null;
+            if (playerSelect == null)
+            {
+                label = BestOf(button.label != null ? button.label.text : null, button.name);
+                return !string.IsNullOrWhiteSpace(label);
+            }
+
+            int playerNumber = button.playerIndex + 1;
+            if (!playerSelect.playersSelected.HasValue)
+            {
+                label = playerNumber == 1 ? "1 player" : playerNumber.ToString(CultureInfo.InvariantCulture) + " players";
+                return true;
+            }
+
+            label = "Player " + playerNumber.ToString(CultureInfo.InvariantCulture);
+            controlType = "controller";
+            valueState = playerSelect.waitingForInput && pauseMenu != null && pauseMenu.currentPauseButton == button
+                ? BestOf(button.label != null ? button.label.text : null, "Waiting for input")
+                : NormalizeControllerType(button);
+            return true;
+        }
+
+        private static string NormalizeControllerType(PlayerSelectButton button)
+        {
+            string label = BestOf(button.label != null ? button.label.text : null, string.Empty);
+            if (!string.IsNullOrWhiteSpace(label))
+            {
+                return label;
+            }
+
+            if (button.controllerType == ControllerType.None)
+            {
+                return string.Empty;
+            }
+
+            return RDString.Get("enum.ControllerType." + button.controllerType);
         }
 
         public static void Speak(string text, bool interrupt)
@@ -1236,9 +1317,73 @@ namespace ADOFAI_Access
     {
         private static void Postfix(PauseButton __instance, bool focus)
         {
+            if (__instance is PlayerSelectButton)
+            {
+                return;
+            }
+
             if (focus)
             {
                 MenuNarration.SpeakFocusedButton(__instance);
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(PlayerSelect), nameof(PlayerSelect.Show))]
+    internal static class PlayerSelectShowPatch
+    {
+        private static void Postfix(PlayerSelect __instance)
+        {
+            if (__instance != null)
+            {
+                MenuNarration.Speak("Change players", interrupt: true);
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(PlayerSelectButton), nameof(PlayerSelectButton.SetFocus))]
+    internal static class PlayerSelectButtonFocusPatch
+    {
+        public static bool IsChangingFocus { get; private set; }
+
+        private static void Prefix(bool focus)
+        {
+            IsChangingFocus = focus;
+        }
+
+        private static void Postfix(PlayerSelectButton __instance, bool focus)
+        {
+            IsChangingFocus = false;
+            if (focus)
+            {
+                MenuNarration.SpeakPlayerSelectButton(__instance);
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(PlayerSelectButton), nameof(PlayerSelectButton.ControllerTypeChanged))]
+    internal static class PlayerSelectButtonControllerTypeChangedPatch
+    {
+        private static void Postfix(PlayerSelectButton __instance)
+        {
+            if (PlayerSelectButtonFocusPatch.IsChangingFocus)
+            {
+                return;
+            }
+
+            MenuNarration.SpeakPlayerSelectControllerChange(__instance);
+        }
+    }
+
+    [HarmonyPatch(typeof(PlayerSelect), nameof(PlayerSelect.Choose))]
+    internal static class PlayerSelectChoosePatch
+    {
+        private static void Postfix(PlayerSelect __instance)
+        {
+            PauseMenu pauseMenu = ADOBase.controller != null ? ADOBase.controller.pauseMenu : null;
+            if (__instance != null && pauseMenu != null && pauseMenu.currentPauseButton is PlayerSelectButton button)
+            {
+                MenuNarration.SpeakPlayerSelectButton(button);
             }
         }
     }
