@@ -43,6 +43,8 @@ namespace ADOFAI_Access
         private static bool _listenRepeatStartupForced;
         private static bool _checkpointRecoveryActive;
         private static int _checkpointRecoveryTargetListenGroupIndex = -1;
+        private static bool _shouldAutoListenRepeatPlayers;
+        private static bool _hasAutomationDecision;
 
         internal static void Tick(scrController controller)
         {
@@ -51,6 +53,9 @@ namespace ADOFAI_Access
             {
                 return;
             }
+
+            _hasAutomationDecision = false;
+            _shouldAutoListenRepeatPlayers = false;
 
             if (controller.state != States.PlayerControl)
             {
@@ -115,12 +120,12 @@ namespace ADOFAI_Access
 
             if (phase == 0)
             {
-                RDC.auto = true;
+                SetPlayerAutomation(shouldAuto: true);
                 ApplyListenDucking(conductor, shouldDuck: true);
                 return;
             }
 
-            RDC.auto = ShouldForceAutoForUncuedRepeatTarget(controller);
+            SetPlayerAutomation(ShouldForceAutoForUncuedRepeatTarget(controller));
             ApplyListenDucking(conductor, shouldDuck: false);
         }
 
@@ -181,6 +186,18 @@ namespace ADOFAI_Access
             ApplyListenDucking(ADOBase.conductor, shouldDuck: false);
             PlayModeController.RestoreAuto();
             ResetRunState();
+        }
+
+        internal static bool TryGetAutoForPlayer(scrPlayer player, out bool shouldAuto)
+        {
+            shouldAuto = false;
+            if (!_hasAutomationDecision || ModSettings.Current.playMode != PlayMode.ListenRepeat || LevelPreview.IsActive)
+            {
+                return false;
+            }
+
+            shouldAuto = _shouldAutoListenRepeatPlayers && ListenRepeatPlayerMenu.IsListenRepeatEnabledForPlayer(player);
+            return true;
         }
 
         private static void ApplyListenDucking(scrConductor conductor, bool shouldDuck)
@@ -569,19 +586,27 @@ namespace ADOFAI_Access
 
             TapCueService.StopAllCues();
             ClearArmedListenGroup();
-            RDC.auto = true;
+            SetPlayerAutomation(shouldAuto: true);
             ApplyListenDucking(conductor, shouldDuck: false);
             return true;
         }
 
         private static void ResetRunState()
         {
+            _hasAutomationDecision = false;
+            _shouldAutoListenRepeatPlayers = false;
             _listenRepeatPhase = -1;
             LastListenScheduledSeqIds.Clear();
             ClearArmedListenGroup();
             _listenRepeatStartupForced = false;
             ResetCheckpointRecovery();
             ResetAllSchedulingState();
+        }
+
+        private static void SetPlayerAutomation(bool shouldAuto)
+        {
+            _hasAutomationDecision = true;
+            _shouldAutoListenRepeatPlayers = shouldAuto;
         }
 
         private static void ResetCueSchedulingState()

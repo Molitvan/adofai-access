@@ -21,6 +21,12 @@ namespace ADOFAI_Access
         Both = 3
     }
 
+    internal enum ListenRepeatPlayerMode
+    {
+        Vanilla = 0,
+        ListenRepeat = 1
+    }
+
     internal sealed class ModSettingsData
     {
         public bool menuNarrationEnabled = true;
@@ -29,6 +35,13 @@ namespace ADOFAI_Access
         public int listenRepeatGroupBeats = 0;
         public bool listenRepeatAudioDuckingEnabled = true;
         public ListenRepeatStartEndCueMode listenRepeatStartEndCueMode = ListenRepeatStartEndCueMode.Sound;
+        public ListenRepeatPlayerMode[] listenRepeatPlayerModes =
+        {
+            ListenRepeatPlayerMode.ListenRepeat,
+            ListenRepeatPlayerMode.ListenRepeat,
+            ListenRepeatPlayerMode.ListenRepeat,
+            ListenRepeatPlayerMode.ListenRepeat
+        };
     }
 
     internal static class ModSettings
@@ -127,6 +140,34 @@ namespace ADOFAI_Access
             if (!Enum.IsDefined(typeof(ListenRepeatStartEndCueMode), _current.listenRepeatStartEndCueMode))
             {
                 _current.listenRepeatStartEndCueMode = ListenRepeatStartEndCueMode.Sound;
+            }
+
+            if (_current.listenRepeatPlayerModes == null || _current.listenRepeatPlayerModes.Length != 4)
+            {
+                ListenRepeatPlayerMode[] migrated = new ListenRepeatPlayerMode[4];
+                for (int i = 0; i < migrated.Length; i++)
+                {
+                    migrated[i] = ListenRepeatPlayerMode.ListenRepeat;
+                }
+
+                if (_current.listenRepeatPlayerModes != null)
+                {
+                    int count = Math.Min(_current.listenRepeatPlayerModes.Length, migrated.Length);
+                    for (int i = 0; i < count; i++)
+                    {
+                        migrated[i] = _current.listenRepeatPlayerModes[i];
+                    }
+                }
+
+                _current.listenRepeatPlayerModes = migrated;
+            }
+
+            for (int i = 0; i < _current.listenRepeatPlayerModes.Length; i++)
+            {
+                if (!Enum.IsDefined(typeof(ListenRepeatPlayerMode), _current.listenRepeatPlayerModes[i]))
+                {
+                    _current.listenRepeatPlayerModes[i] = ListenRepeatPlayerMode.ListenRepeat;
+                }
             }
         }
 
