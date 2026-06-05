@@ -18,8 +18,8 @@ Note: you have to have A Dance of Fire and Ice installed before following this
 ### Listen-repeat and pattern preview play modes
 This is the main feature of the mod that makes the gameplay accessible. There are 3 play modes you can choose from:
 - Vanilla: plays like the original game, not modified by the mod at all
-- Listen-repeat (like Sequence Storm's Audio cues 1 mode): breaks down the beats into 2 alternating types of groups, listen and repeat. While the listen group is active, it uses audio cues to play you the rhythm you'll need to execute in the next repeat group. You don't need to tap while a listen group is active. The number of beats in a group is configurable.
-- Pattern preview (like Sequence Storm's Audio cues 2 mode): adds audio cues that let you listen to the rhythm you need to execute a configurable number of beats ahead of time
+- Listen-repeat ([listen to a demo](https://audiopub.site/listen/4b236d95-298e-49cd-adca-70fcb7dc95f1)): Like Sequence Storm's Audio cues 1 mode. Breaks down the beats into 2 alternating types of groups, listen and repeat. While the listen group is active, it uses audio cues to play you the rhythm you'll need to execute in the next repeat group. You don't need to tap while a listen group is active. The number of beats in a group is configurable.
+- Pattern preview ([listen to a demo](https://audiopub.site/listen/3d4c0417-3a48-4dbb-b070-0e15856aee17)): Like Sequence Storm's Audio cues 2 mode. Adds audio cues that let you listen to the rhythm you need to execute a configurable number of beats ahead of time
 
 ### Menu narration
 Toggleable with F4
