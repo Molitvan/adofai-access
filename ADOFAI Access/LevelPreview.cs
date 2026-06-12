@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using HarmonyLib;
 using MelonLoader;
 using UnityEngine;
@@ -9,9 +10,7 @@ namespace ADOFAI_Access
     {
         private const KeyCode ToggleKey = KeyCode.F8;
         private const KeyCode AlternateToggleKey = KeyCode.P;
-        private const double CueScheduleHorizonSeconds = 0.2;
         private const double CueLateGraceSeconds = 0.04;
-        private const float CueMinIntervalSeconds = 0.03f;
 
         private static bool _active;
         private static bool _previousAuto;
@@ -22,9 +21,9 @@ namespace ADOFAI_Access
         private static int _previousPracticeLength;
 
         private static bool _toggleHintSpoken;
-        private static int _lastPredictedSeqId = -1;
-        private static double _lastPredictedDueDsp = double.MinValue;
-        private static float _lastCueAt;
+        private static readonly HashSet<int> HandledSeqIds = new HashSet<int>();
+        private static List<scrFloor> _handledFloorList;
+        private static int _handledFloorCount;
 
         public static bool IsActive => _active;
         public static string CueFilePath => TapCueService.CueFilePath;
@@ -66,7 +65,7 @@ namespace ADOFAI_Access
             GCS.practiceMode = true;
             GCS.speedTrialMode = false;
             RDC.auto = true;
-            TryPlayPredictedCue();
+            TryScheduleDueCues();
         }
 
         public static bool Toggle()
@@ -97,31 +96,11 @@ namespace ADOFAI_Access
             }
         }
 
-        public static void PlayTapCue()
+        private static void ResetCueTracking()
         {
-            if (!_active)
-            {
-                return;
-            }
-
-            float now = Time.unscaledTime;
-            if (now - _lastCueAt < CueMinIntervalSeconds)
-            {
-                return;
-            }
-
-            TapCueService.PlayCueNow();
-            _lastCueAt = now;
-        }
-
-        private static void PlayTapCueAt(double dspTime)
-        {
-            if (!_active)
-            {
-                return;
-            }
-
-            TapCueService.PlayCueAt(dspTime);
+            HandledSeqIds.Clear();
+            _handledFloorList = null;
+            _handledFloorCount = 0;
         }
 
         private static bool StartInternal()
@@ -154,9 +133,7 @@ namespace ADOFAI_Access
             GCS.practiceLength = remainingLength;
             GCS.speedTrialMode = false;
             RDC.auto = true;
-            _lastPredictedSeqId = -1;
-            _lastPredictedDueDsp = double.MinValue;
-            _lastCueAt = 0f;
+            ResetCueTracking();
 
             MelonLogger.Msg("[ADOFAI Access] Level preview enabled.");
             MenuNarration.Speak("Level preview on", interrupt: true);
@@ -179,8 +156,7 @@ namespace ADOFAI_Access
             GCS.speedTrialMode = _previousSpeedTrialMode;
             GCS.currentSpeedTrial = _previousSpeedTrialValue;
             GCS.nextSpeedRun = _previousSpeedTrialValue;
-            _lastPredictedSeqId = -1;
-            _lastPredictedDueDsp = double.MinValue;
+            ResetCueTracking();
 
             if (speak)
             {
@@ -231,46 +207,74 @@ namespace ADOFAI_Access
             return controller.gameworld || controller.isPuzzleRoom;
         }
 
-        private static void TryPlayPredictedCue()
+        private static void TryScheduleDueCues()
         {
             scrController controller = ADOBase.controller;
             scrConductor conductor = ADOBase.conductor;
-            if (controller == null || conductor == null || controller.paused || controller.state != States.PlayerControl)
+            scrLevelMaker levelMaker = ADOBase.lm;
+            if (controller == null || conductor == null || levelMaker == null || levelMaker.listFloors == null)
             {
                 return;
             }
 
-            scrFloor current = controller.currFloor;
-            scrFloor target = current != null ? current.nextfloor : null;
-            if (target == null || target.auto)
+            if (controller.paused || controller.state != States.PlayerControl)
             {
                 return;
             }
 
-            double dueDsp = conductor.dspTimeSongPosZero + target.entryTimePitchAdj;
-            double untilDue = dueDsp - conductor.dspTime;
-            if (untilDue > CueScheduleHorizonSeconds || untilDue < -CueLateGraceSeconds)
+            List<scrFloor> floors = levelMaker.listFloors;
+
+            // A rebuilt floor list (restart/checkpoint reload) means seqIDs are fresh; drop stale handled state.
+            if (!ReferenceEquals(floors, _handledFloorList) || floors.Count != _handledFloorCount)
             {
-                return;
+                HandledSeqIds.Clear();
+                _handledFloorList = floors;
+                _handledFloorCount = floors.Count;
             }
 
-            bool alreadyCued = target.seqID == _lastPredictedSeqId && Math.Abs(dueDsp - _lastPredictedDueDsp) < 0.001;
-            if (alreadyCued)
-            {
-                return;
-            }
+            double nowDsp = conductor.dspTime;
+            double horizon = PlayModeTiming.GetScheduleHorizonSeconds(conductor);
 
-            _lastPredictedSeqId = target.seqID;
-            _lastPredictedDueDsp = dueDsp;
-            if (untilDue >= 0.0)
-            {
-                // Perfect-center timing: schedule cue exactly at the tile's entry time.
-                PlayTapCueAt(dueDsp);
-                return;
-            }
+            // Taps correspond to entering each floor *after* the one the planet currently sits on;
+            // the start tile itself is not a tap. seqID is path order, so currFloor.seqID is the cutoff.
+            scrFloor currentFloor = controller.currFloor;
+            int currentSeqID = currentFloor != null ? currentFloor.seqID : int.MinValue;
 
-            // If slightly past center due to frame timing, play immediately as late-grace fallback.
-            PlayTapCue();
+            // Schedule every upcoming tap within the horizon (not just currFloor.nextfloor) so that
+            // tightly-clustered taps are all cued ahead of time instead of being dropped as "late"
+            // by the time the auto-player walks onto each floor one hop per frame.
+            for (int i = 0; i < floors.Count; i++)
+            {
+                scrFloor floor = floors[i];
+                if (floor == null || floor.auto || floor.seqID <= currentSeqID)
+                {
+                    continue;
+                }
+
+                if (HandledSeqIds.Contains(floor.seqID))
+                {
+                    continue;
+                }
+
+                // Perfect-center timing: cue lands exactly on the tile's entry time (no lead).
+                double dueDsp = conductor.dspTimeSongPosZero + floor.entryTimePitchAdj;
+                double untilDue = dueDsp - nowDsp;
+                if (untilDue > horizon)
+                {
+                    continue;
+                }
+
+                HandledSeqIds.Add(floor.seqID);
+                if (untilDue >= 0.0)
+                {
+                    TapCueService.PlayCueAt(dueDsp);
+                }
+                else if (untilDue >= -CueLateGraceSeconds)
+                {
+                    // Slightly past center due to frame timing: play immediately as late-grace fallback.
+                    TapCueService.PlayCueNow();
+                }
+            }
         }
 
     }
