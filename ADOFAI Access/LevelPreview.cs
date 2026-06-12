@@ -209,6 +209,12 @@ namespace ADOFAI_Access
 
         private static void TryScheduleDueCues()
         {
+            // Preview auto-play still runs; only the cue audio is suppressed when this option is off.
+            if (!ModSettings.Current.levelPreviewCuesEnabled)
+            {
+                return;
+            }
+
             scrController controller = ADOBase.controller;
             scrConductor conductor = ADOBase.conductor;
             scrLevelMaker levelMaker = ADOBase.lm;

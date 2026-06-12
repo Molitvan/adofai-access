@@ -68,6 +68,14 @@ namespace ADOFAI_Access
             },
             new SettingOption
             {
+                Label = "Play cues in level preview",
+                ControlType = "toggle",
+                GetValue = settings => settings.levelPreviewCuesEnabled ? "on" : "off",
+                Change = (settings, delta) => settings.levelPreviewCuesEnabled = delta > 0,
+                Activate = settings => settings.levelPreviewCuesEnabled = !settings.levelPreviewCuesEnabled
+            },
+            new SettingOption
+            {
                 Label = "ADOFAI Access version",
                 ControlType = "button",
                 GetValue = _ => Core.VersionString,

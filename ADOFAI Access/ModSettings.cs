@@ -30,6 +30,7 @@ namespace ADOFAI_Access
     internal sealed class ModSettingsData
     {
         public bool menuNarrationEnabled = true;
+        public bool levelPreviewCuesEnabled = true;
         public PlayMode playMode = PlayMode.Vanilla;
         public int patternPreviewBeatsAhead = 4;
         public int listenRepeatGroupBeats = 0;
