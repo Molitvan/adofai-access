@@ -5,7 +5,7 @@ using System.Linq;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
-[assembly: MelonInfo(typeof(ADOFAI_Access.Core), "ADOFAI Access", "0.6-beta", "Molitvan", null)]
+[assembly: MelonInfo(typeof(ADOFAI_Access.Core), "ADOFAI Access", "0.6.1-beta", "Molitvan", null)]
 [assembly: MelonGame("7th Beat Games", "A Dance of Fire and Ice")]
 
 namespace ADOFAI_Access
