@@ -365,7 +365,12 @@ namespace ADOFAI_Access
                     valueState = BestOf(settingButton.valueLabel != null ? settingButton.valueLabel.text : null, string.Empty);
                     break;
                 case PauseLevelButton levelButton:
-                    if (TryDescribePracticeTimelinePauseButton(levelButton, out string practiceLabel, out string practiceValue))
+                    if (TryDescribeMedalButton(levelButton, out string medalLabel, out string medalValue))
+                    {
+                        label = medalLabel;
+                        valueState = medalValue;
+                    }
+                    else if (TryDescribePracticeTimelinePauseButton(levelButton, out string practiceLabel, out string practiceValue))
                     {
                         label = practiceLabel;
                         valueState = practiceValue;
@@ -966,6 +971,38 @@ namespace ADOFAI_Access
             }
 
             return "setting";
+        }
+
+        // Neo Cosmos boss-level section medals are MenuMedal prefab clones that also carry a
+        // PauseLevelButton, so without this they narrate as the raw object name "pause_medal(Clone)".
+        private static bool TryDescribeMedalButton(PauseLevelButton levelButton, out string label, out string valueState)
+        {
+            label = string.Empty;
+            valueState = string.Empty;
+            if (levelButton == null)
+            {
+                return false;
+            }
+
+            MenuMedal medal = levelButton.GetComponent<MenuMedal>();
+            if (medal == null)
+            {
+                return false;
+            }
+
+            int sectionNumber = medal.id + 1;
+            PauseMedals medals = levelButton.GetComponentInParent<PauseMedals>();
+            if (medals != null && medal.id >= 0 && medal.id < medals.medalsLength)
+            {
+                label = "Section " + sectionNumber + " of " + medals.medalsLength;
+                valueState = medals.SectionIsUnlocked(medal.id) ? "unlocked" : "locked";
+            }
+            else
+            {
+                label = "Section " + sectionNumber;
+            }
+
+            return true;
         }
 
         private static string ExtractPauseLevelLabel(PauseLevelButton levelButton)
