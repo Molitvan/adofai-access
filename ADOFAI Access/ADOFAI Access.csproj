@@ -428,6 +428,7 @@
 		<Compile Include="PlayModeController.cs" />
 		<Compile Include="PlayModeTiming.cs" />
 		<Compile Include="LevelPreview.cs" />
+		<Compile Include="MenuGamepad.cs" />
 		<Compile Include="MenuNarration.cs" />
 		<Compile Include="ModSettings.cs" />
 		<Compile Include="TapCueService.cs" />

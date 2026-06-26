@@ -93,6 +93,7 @@ namespace ADOFAI_Access
     {
         private static bool _active;
         private static int _suppressPauseUntilFrame = -1;
+        private static int _suppressBeginUntilFrame = -1;
         private static readonly Dictionary<RDInputType, bool> PreviousInputStates = new Dictionary<RDInputType, bool>();
         private static bool _hadEventSystem;
         private static bool _previousSendNavigationEvents;
@@ -100,12 +101,26 @@ namespace ADOFAI_Access
         public static bool ShouldBlockInput => AccessSettingsMenu.IsOpen || AccessibleLevelSelectMenu.IsOpen || ListenRepeatPlayerMenu.IsOpen || AudioGlossaryMenu.IsOpen;
         public static bool ShouldSuppressPauseToggle => Time.frameCount <= _suppressPauseUntilFrame;
 
+        // While a custom menu is open (or for a short window after it closes), the press-to-begin /
+        // skip "any valid input" check is suppressed, so opening or operating a menu with a controller
+        // button on the press-to-begin screen does not also start the level.
+        public static bool ShouldSuppressBegin => ShouldBlockInput || Time.frameCount <= _suppressBeginUntilFrame;
+
         public static void SuppressPauseForFrames(int frameCount = 2)
         {
             int until = Time.frameCount + Mathf.Max(1, frameCount);
             if (until > _suppressPauseUntilFrame)
             {
                 _suppressPauseUntilFrame = until;
+            }
+        }
+
+        public static void SuppressBeginForFrames(int frameCount = 4)
+        {
+            int until = Time.frameCount + Mathf.Max(1, frameCount);
+            if (until > _suppressBeginUntilFrame)
+            {
+                _suppressBeginUntilFrame = until;
             }
         }
 
@@ -130,6 +145,7 @@ namespace ADOFAI_Access
         private static void Activate()
         {
             _active = true;
+            SuppressBeginForFrames();
             PreviousInputStates.Clear();
 
             if (RDInput.inputs != null)
@@ -163,6 +179,7 @@ namespace ADOFAI_Access
         private static void Deactivate()
         {
             _active = false;
+            SuppressBeginForFrames();
 
             foreach (KeyValuePair<RDInputType, bool> pair in PreviousInputStates)
             {
@@ -238,6 +255,25 @@ namespace ADOFAI_Access
         {
             if (CustomMenuInputGuard.ShouldBlockInput || CustomMenuInputGuard.ShouldSuppressPauseToggle)
             {
+                return false;
+            }
+
+            return true;
+        }
+    }
+
+    // The press-to-begin / skip flow starts the level when any valid input is triggered, which reads
+    // Input.anyKeyDown / main-press directly (not via the RDInput guard). Suppress it while a custom
+    // menu is open (and briefly after) so opening or operating a menu with a controller button on the
+    // press-to-begin screen does not also begin the level.
+    [HarmonyPatch(typeof(scrPlayerManager), nameof(scrPlayerManager.AnyValidInputWasTriggered))]
+    internal static class AnyValidInputWhileCustomMenuPatch
+    {
+        private static bool Prefix(ref bool __result)
+        {
+            if (CustomMenuInputGuard.ShouldSuppressBegin)
+            {
+                __result = false;
                 return false;
             }
 

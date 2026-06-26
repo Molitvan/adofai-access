@@ -73,13 +73,13 @@ namespace ADOFAI_Access
                 return;
             }
 
-            if (Input.GetKeyDown(KeyCode.UpArrow))
+            if (Input.GetKeyDown(KeyCode.UpArrow) || MenuGamepad.UpPressed())
             {
                 Move(-1);
                 return;
             }
 
-            if (Input.GetKeyDown(KeyCode.DownArrow))
+            if (Input.GetKeyDown(KeyCode.DownArrow) || MenuGamepad.DownPressed())
             {
                 Move(1);
                 return;
@@ -99,13 +99,13 @@ namespace ADOFAI_Access
                 return;
             }
 
-            if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.RightArrow))
+            if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.RightArrow) || MenuGamepad.LeftPressed() || MenuGamepad.RightPressed())
             {
                 ToggleSelection();
                 return;
             }
 
-            if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space))
+            if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space) || MenuGamepad.ConfirmPressed())
             {
                 if (_selectedIndex >= _playerCount)
                 {

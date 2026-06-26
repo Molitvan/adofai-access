@@ -98,20 +98,20 @@ namespace ADOFAI_Access
                 return;
             }
 
-            if (Input.GetKeyDown(KeyCode.Escape))
+            if (Input.GetKeyDown(KeyCode.Escape) || MenuGamepad.CancelPressed())
             {
                 CustomMenuInputGuard.SuppressPauseForFrames();
                 Close(speak: true);
                 return;
             }
 
-            if (Input.GetKeyDown(KeyCode.UpArrow))
+            if (Input.GetKeyDown(KeyCode.UpArrow) || MenuGamepad.UpPressed())
             {
                 MoveSelection(-1);
                 return;
             }
 
-            if (Input.GetKeyDown(KeyCode.DownArrow))
+            if (Input.GetKeyDown(KeyCode.DownArrow) || MenuGamepad.DownPressed())
             {
                 MoveSelection(1);
                 return;
@@ -131,7 +131,7 @@ namespace ADOFAI_Access
                 return;
             }
 
-            if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space))
+            if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space) || MenuGamepad.ConfirmPressed())
             {
                 Entries[_selectedIndex].Play?.Invoke();
             }
