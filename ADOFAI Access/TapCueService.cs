@@ -66,6 +66,21 @@ namespace ADOFAI_Access
             GeneratedClipName = "ADOFAI_Access_DefaultListenEndCue",
             GeneratedToneHz = 987.77f
         };
+        // Played at the start/end of hold tiles (scrFloor.holdLength > -1) in place of the tap cue.
+        private static readonly CueClipState HoldStartCueState = new CueClipState
+        {
+            FileName = "hold_start.wav",
+            EmbeddedResourceName = "ADOFAI_Access.Audio.hold_start.wav",
+            GeneratedClipName = "ADOFAI_Access_DefaultHoldStartCue",
+            GeneratedToneHz = 880f
+        };
+        private static readonly CueClipState HoldEndCueState = new CueClipState
+        {
+            FileName = "hold_end.wav",
+            EmbeddedResourceName = "ADOFAI_Access.Audio.hold_end.wav",
+            GeneratedClipName = "ADOFAI_Access_DefaultHoldEndCue",
+            GeneratedToneHz = 659.25f
+        };
 
         public static string CueFilePath
         {
@@ -118,6 +133,59 @@ namespace ADOFAI_Access
         public static void PlayListenEndAt(double dspTime)
         {
             PlayCueAt(ListenEndCueState, dspTime, allowFallbackWhileCustomLoads: true);
+        }
+
+        // Dispatch the correct cue for a classified floor (see PlayModeTiming.GetFloorCueKind).
+        public static void PlayFloorCueAt(FloorCueKind kind, double dspTime, bool multiTap)
+        {
+            switch (kind)
+            {
+                case FloorCueKind.Tap:
+                    PlayCueAt(dspTime, multiTap);
+                    break;
+                case FloorCueKind.HoldStart:
+                    PlayHoldStartAt(dspTime);
+                    break;
+                case FloorCueKind.HoldEnd:
+                    PlayHoldEndAt(dspTime);
+                    break;
+            }
+        }
+
+        public static void PlayFloorCueNow(FloorCueKind kind, bool multiTap)
+        {
+            switch (kind)
+            {
+                case FloorCueKind.Tap:
+                    PlayCueNow(multiTap);
+                    break;
+                case FloorCueKind.HoldStart:
+                    PlayHoldStartNow();
+                    break;
+                case FloorCueKind.HoldEnd:
+                    PlayHoldEndNow();
+                    break;
+            }
+        }
+
+        public static void PlayHoldStartNow()
+        {
+            PlayCueNow(HoldStartCueState, allowFallbackWhileCustomLoads: true);
+        }
+
+        public static void PlayHoldStartAt(double dspTime)
+        {
+            PlayCueAt(HoldStartCueState, dspTime, allowFallbackWhileCustomLoads: true);
+        }
+
+        public static void PlayHoldEndNow()
+        {
+            PlayCueNow(HoldEndCueState, allowFallbackWhileCustomLoads: true);
+        }
+
+        public static void PlayHoldEndAt(double dspTime)
+        {
+            PlayCueAt(HoldEndCueState, dspTime, allowFallbackWhileCustomLoads: true);
         }
 
         public static double GetListenStartCueDurationSeconds()

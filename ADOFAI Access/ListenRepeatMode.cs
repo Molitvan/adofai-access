@@ -14,6 +14,7 @@ namespace ADOFAI_Access
             public int SeqId;
             public double CueDsp;
             public bool MultiTap;
+            public FloorCueKind Kind;
         }
 
         private sealed class ArmedListenGroup
@@ -576,6 +577,10 @@ namespace ADOFAI_Access
                     continue;
                 }
 
+                // Note: a silent (None) floor — e.g. the middle of a chained hold — is still kept in
+                // the plan so its seqID is tracked for player automation; PlayFloorCue* emits nothing.
+                FloorCueKind cueKind = PlayModeTiming.GetFloorCueKind(floor);
+
                 double previewDueDsp = conductor.dspTimeSongPosZero + floor.entryTimePitchAdj - groupTimeShift;
                 if (previewDueDsp < group.ListenStartDsp || previewDueDsp >= group.RepeatStartDsp)
                 {
@@ -586,7 +591,8 @@ namespace ADOFAI_Access
                 {
                     SeqId = floor.seqID,
                     CueDsp = previewDueDsp,
-                    MultiTap = floor.tapsNeeded > 1
+                    MultiTap = floor.tapsNeeded > 1,
+                    Kind = cueKind
                 });
             }
 
@@ -614,11 +620,11 @@ namespace ADOFAI_Access
                 _armedListenGroup.ScheduledSeqIds.Add(cue.SeqId);
                 if (cue.CueDsp > nowDsp)
                 {
-                    TapCueService.PlayCueAt(cue.CueDsp, cue.MultiTap);
+                    TapCueService.PlayFloorCueAt(cue.Kind, cue.CueDsp, cue.MultiTap);
                 }
                 else if (allowImmediateLatePlayback && cue.CueDsp < _armedListenGroup.RepeatStartDsp)
                 {
-                    TapCueService.PlayCueNow(cue.MultiTap);
+                    TapCueService.PlayFloorCueNow(cue.Kind, cue.MultiTap);
                 }
             }
         }

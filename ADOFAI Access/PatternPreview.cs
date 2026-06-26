@@ -50,14 +50,20 @@ namespace ADOFAI_Access
                 }
 
                 HandledSeqIds.Add(floor.seqID);
+                FloorCueKind cueKind = PlayModeTiming.GetFloorCueKind(floor);
+                if (cueKind == FloorCueKind.None)
+                {
+                    continue;
+                }
+
                 bool multiTap = floor.tapsNeeded > 1;
                 if (untilPreview >= 0.0)
                 {
-                    TapCueService.PlayCueAt(previewDueDsp, multiTap);
+                    TapCueService.PlayFloorCueAt(cueKind, previewDueDsp, multiTap);
                 }
                 else
                 {
-                    TapCueService.PlayCueNow(multiTap);
+                    TapCueService.PlayFloorCueNow(cueKind, multiTap);
                 }
             }
         }

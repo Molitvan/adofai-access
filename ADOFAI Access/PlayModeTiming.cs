@@ -4,8 +4,43 @@ using UnityEngine;
 
 namespace ADOFAI_Access
 {
+    // Which cue (if any) a floor should produce. Holds (scrFloor.holdLength > -1) replace the
+    // tap cue: a hold run plays HoldStart at its first hold tile and HoldEnd at the release tile
+    // (the first non-hold tile after the run); tiles in the middle of a chained hold are silent.
+    internal enum FloorCueKind
+    {
+        None = 0,
+        Tap = 1,
+        HoldStart = 2,
+        HoldEnd = 3
+    }
+
     internal static class PlayModeTiming
     {
+        internal static FloorCueKind GetFloorCueKind(scrFloor floor)
+        {
+            if (floor == null || floor.auto)
+            {
+                return FloorCueKind.None;
+            }
+
+            bool isHold = floor.holdLength > -1;
+            bool prevIsHold = floor.prevfloor != null && floor.prevfloor.holdLength > -1;
+
+            if (isHold)
+            {
+                // Start of a hold run; tiles continuing a chained hold are silent.
+                return prevIsHold ? FloorCueKind.None : FloorCueKind.HoldStart;
+            }
+
+            if (prevIsHold)
+            {
+                return FloorCueKind.HoldEnd;
+            }
+
+            return FloorCueKind.Tap;
+        }
+
         // Small nudge applied when classifying a position into a constant-BPM
         // grouping coordinate, so a floor sitting exactly on a group boundary
         // (e.g. grid beat 4.0) does not compute as 3.99999... and fall into the
