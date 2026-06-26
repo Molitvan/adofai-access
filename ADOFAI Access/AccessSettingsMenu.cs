@@ -121,10 +121,12 @@ namespace ADOFAI_Access
                 {
                     Close();
                 }
-                else
+                else if (!IsActivelyPlayingLevel())
                 {
                     Open();
                 }
+                // While actively playing a level the menu does not open; the key/button passes
+                // through to the game.
                 return;
             }
 
@@ -169,6 +171,46 @@ namespace ADOFAI_Access
             if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space) || MenuGamepad.ConfirmPressed())
             {
                 ToggleCurrentOption();
+            }
+        }
+
+        // True while the player is actively playing an actual level (gameplay scene, a running state,
+        // not paused). Used to keep the settings menu from opening mid-level so the key/button passes
+        // through to the game. Press-to-begin (state Start), won/fail, and paused are not "active".
+        private static bool IsActivelyPlayingLevel()
+        {
+            scrController controller = ADOBase.controller;
+            if (controller == null || controller.paused || ADOBase.isLevelEditor)
+            {
+                return false;
+            }
+
+            // Level select and the custom-level browser are not "in a level" (settings should open there).
+            if (ADOBase.isLevelSelect || ADOBase.isCLS)
+            {
+                return false;
+            }
+
+            // isScnGame is custom-level-only; official levels report via isPlayingLevel. Cover both, plus
+            // the gameplay scene name and puzzle rooms.
+            bool inLevel = ADOBase.isScnGame
+                || ADOBase.isPlayingLevel
+                || ADOBase.sceneName == GCNS.sceneGame
+                || controller.isPuzzleRoom;
+            if (!inLevel)
+            {
+                return false;
+            }
+
+            // Active states only; press-to-begin (Start) and won/fail still allow opening.
+            switch (controller.state)
+            {
+                case States.Countdown:
+                case States.Checkpoint:
+                case States.PlayerControl:
+                    return true;
+                default:
+                    return false;
             }
         }
 
