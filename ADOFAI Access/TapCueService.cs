@@ -135,7 +135,19 @@ namespace ADOFAI_Access
             PlayCueAt(ListenEndCueState, dspTime, allowFallbackWhileCustomLoads: true);
         }
 
+        public static double GetFloorCueStartDsp(FloorCueKind kind, double alignmentDsp)
+        {
+            if (kind != FloorCueKind.HoldEnd)
+            {
+                return alignmentDsp;
+            }
+
+            double cueDuration = GetCueDurationSeconds(HoldEndCueState, allowFallbackWhileCustomLoads: true);
+            return alignmentDsp - cueDuration;
+        }
+
         // Dispatch the correct cue for a classified floor (see PlayModeTiming.GetFloorCueKind).
+        // dspTime is the floor alignment timestamp; hold-end cues finish there instead of starting there.
         public static void PlayFloorCueAt(FloorCueKind kind, double dspTime, bool multiTap)
         {
             switch (kind)
@@ -147,7 +159,10 @@ namespace ADOFAI_Access
                     PlayHoldStartAt(dspTime);
                     break;
                 case FloorCueKind.HoldEnd:
-                    PlayHoldEndAt(dspTime);
+                    // The release timestamp is the cue's end alignment point, matching the
+                    // listen-repeat boundary markers. Start the clip early so it finishes
+                    // exactly when the hold ends.
+                    PlayHoldEndAt(GetFloorCueStartDsp(kind, dspTime));
                     break;
             }
         }

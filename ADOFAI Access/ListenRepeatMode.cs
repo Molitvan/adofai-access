@@ -596,7 +596,9 @@ namespace ADOFAI_Access
                 });
             }
 
-            group.Cues.Sort((a, b) => a.CueDsp.CompareTo(b.CueDsp));
+            group.Cues.Sort((a, b) =>
+                TapCueService.GetFloorCueStartDsp(a.Kind, a.CueDsp)
+                    .CompareTo(TapCueService.GetFloorCueStartDsp(b.Kind, b.CueDsp)));
             return group;
         }
 
@@ -611,14 +613,15 @@ namespace ADOFAI_Access
             while (_armedListenGroup.NextCueIndex < _armedListenGroup.Cues.Count)
             {
                 ListenCueEvent cue = _armedListenGroup.Cues[_armedListenGroup.NextCueIndex];
-                if (cue.CueDsp > nowDsp + scheduleHorizon)
+                double cueStartDsp = TapCueService.GetFloorCueStartDsp(cue.Kind, cue.CueDsp);
+                if (cueStartDsp > nowDsp + scheduleHorizon)
                 {
                     break;
                 }
 
                 _armedListenGroup.NextCueIndex++;
                 _armedListenGroup.ScheduledSeqIds.Add(cue.SeqId);
-                if (cue.CueDsp > nowDsp)
+                if (cueStartDsp > nowDsp)
                 {
                     TapCueService.PlayFloorCueAt(cue.Kind, cue.CueDsp, cue.MultiTap);
                 }

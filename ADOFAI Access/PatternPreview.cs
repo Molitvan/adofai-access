@@ -37,7 +37,9 @@ namespace ADOFAI_Access
                     continue;
                 }
 
-                double untilPreview = previewDueDsp - nowDsp;
+                FloorCueKind cueKind = PlayModeTiming.GetFloorCueKind(floor);
+                double cueStartDsp = TapCueService.GetFloorCueStartDsp(cueKind, previewDueDsp);
+                double untilPreview = cueStartDsp - nowDsp;
                 if (untilPreview < 0.0)
                 {
                     HandledSeqIds.Add(floor.seqID);
@@ -50,7 +52,6 @@ namespace ADOFAI_Access
                 }
 
                 HandledSeqIds.Add(floor.seqID);
-                FloorCueKind cueKind = PlayModeTiming.GetFloorCueKind(floor);
                 if (cueKind == FloorCueKind.None)
                 {
                     continue;

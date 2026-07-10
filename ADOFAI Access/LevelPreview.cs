@@ -264,14 +264,15 @@ namespace ADOFAI_Access
 
                 // Perfect-center timing: cue lands exactly on the tile's entry time (no lead).
                 double dueDsp = conductor.dspTimeSongPosZero + floor.entryTimePitchAdj;
-                double untilDue = dueDsp - nowDsp;
+                FloorCueKind cueKind = PlayModeTiming.GetFloorCueKind(floor);
+                double cueStartDsp = TapCueService.GetFloorCueStartDsp(cueKind, dueDsp);
+                double untilDue = cueStartDsp - nowDsp;
                 if (untilDue > horizon)
                 {
                     continue;
                 }
 
                 HandledSeqIds.Add(floor.seqID);
-                FloorCueKind cueKind = PlayModeTiming.GetFloorCueKind(floor);
                 if (cueKind == FloorCueKind.None)
                 {
                     continue;
