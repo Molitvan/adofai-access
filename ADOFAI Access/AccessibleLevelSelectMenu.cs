@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using ADOFAI;
+using ADOFAI.SteamIntegration;
 using UnityEngine;
 
 namespace ADOFAI_Access
@@ -309,7 +310,7 @@ namespace ADOFAI_Access
                 ADOBase.GoToCalibration();
             });
 
-            if (SteamIntegration.initialized)
+            if (SteamController.initialized)
             {
                 AddEntry("Open custom levels", () =>
                 {
