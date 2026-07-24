@@ -18,6 +18,18 @@ Note: you have to have A Dance of Fire and Ice installed before following this
 2. Open the MelonLoader installer, select A Dance of Fire and Ice (or add it manually if it is not in the list), then install MelonLoader
 3. [Download the latest release of ADOFAI Access](https://github.com/Molitvan/adofai-access/releases/latest)
 4. Extract the contents of the downloaded ZIP into the game's root folder (the folder containing A Dance of Fire and Ice.exe).
+5. Additional step for Linux (launch options):
+    - Open Steam Big Picture
+    - Go to A Dance of Fire and Ice then Manage then Properties
+    - Under the General tab, find the launch options edit box
+    - Put this inside, replacing 1000 with your user ID (most likely 1000)
+    ```
+    PRESSURE_VESSEL_FILESYSTEMS_RW=/run/user/1000/speech-dispatcher LD_PRELOAD=./MelonLoader.Bootstrap.so %command%
+    ```
+    - To get your user ID, run this command
+    ```bash
+    id -u
+    ```
 
 ## Main Features
 
