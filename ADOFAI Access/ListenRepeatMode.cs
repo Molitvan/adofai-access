@@ -15,6 +15,7 @@ namespace ADOFAI_Access
             public double CueDsp;
             public bool MultiTap;
             public FloorCueKind Kind;
+            public double HoldEndDsp;
         }
 
         private sealed class ArmedListenGroup
@@ -587,18 +588,25 @@ namespace ADOFAI_Access
                     continue;
                 }
 
+                double holdEndDsp = 0d;
+                if (cueKind == FloorCueKind.Hold && PlayModeTiming.TryGetHoldEndFloor(floor, out scrFloor release))
+                {
+                    // Only replace the sound: keep the existing start-floor group
+                    // selection and shift the whole hold by the same amount as taps.
+                    holdEndDsp = conductor.dspTimeSongPosZero + release.entryTimePitchAdj - groupTimeShift;
+                }
+
                 group.Cues.Add(new ListenCueEvent
                 {
                     SeqId = floor.seqID,
                     CueDsp = previewDueDsp,
                     MultiTap = floor.tapsNeeded > 1,
-                    Kind = cueKind
+                    Kind = cueKind,
+                    HoldEndDsp = holdEndDsp
                 });
             }
 
-            group.Cues.Sort((a, b) =>
-                TapCueService.GetFloorCueStartDsp(a.Kind, a.CueDsp)
-                    .CompareTo(TapCueService.GetFloorCueStartDsp(b.Kind, b.CueDsp)));
+            group.Cues.Sort((a, b) => a.CueDsp.CompareTo(b.CueDsp));
             return group;
         }
 
@@ -613,7 +621,7 @@ namespace ADOFAI_Access
             while (_armedListenGroup.NextCueIndex < _armedListenGroup.Cues.Count)
             {
                 ListenCueEvent cue = _armedListenGroup.Cues[_armedListenGroup.NextCueIndex];
-                double cueStartDsp = TapCueService.GetFloorCueStartDsp(cue.Kind, cue.CueDsp);
+                double cueStartDsp = cue.CueDsp;
                 if (cueStartDsp > nowDsp + scheduleHorizon)
                 {
                     break;
@@ -623,11 +631,11 @@ namespace ADOFAI_Access
                 _armedListenGroup.ScheduledSeqIds.Add(cue.SeqId);
                 if (cueStartDsp > nowDsp)
                 {
-                    TapCueService.PlayFloorCueAt(cue.Kind, cue.CueDsp, cue.MultiTap);
+                    TapCueService.PlayFloorCueAt(cue.Kind, cue.CueDsp, cue.MultiTap, cue.HoldEndDsp);
                 }
                 else if (allowImmediateLatePlayback && cue.CueDsp < _armedListenGroup.RepeatStartDsp)
                 {
-                    TapCueService.PlayFloorCueNow(cue.Kind, cue.MultiTap);
+                    TapCueService.PlayFloorCueNow(cue.Kind, cue.MultiTap, cue.HoldEndDsp);
                 }
             }
         }

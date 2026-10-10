@@ -212,6 +212,8 @@ namespace ADOFAI_Access
             // Preview auto-play still runs; only the cue audio is suppressed when this option is off.
             if (!ModSettings.Current.levelPreviewCuesEnabled)
             {
+                TapCueService.StopAllCues();
+                HandledSeqIds.Clear();
                 return;
             }
 
@@ -225,6 +227,8 @@ namespace ADOFAI_Access
 
             if (controller.paused || controller.state != States.PlayerControl)
             {
+                TapCueService.StopAllCues();
+                HandledSeqIds.Clear();
                 return;
             }
 
@@ -252,7 +256,22 @@ namespace ADOFAI_Access
             for (int i = 0; i < floors.Count; i++)
             {
                 scrFloor floor = floors[i];
-                if (floor == null || floor.auto || floor.seqID <= currentSeqID)
+                if (floor == null || floor.auto)
+                {
+                    continue;
+                }
+
+                FloorCueKind cueKind = PlayModeTiming.GetFloorCueKind(floor);
+                double holdEndDsp = 0d;
+                if (cueKind == FloorCueKind.Hold)
+                {
+                    if (!PlayModeTiming.TryGetHoldEndFloor(floor, out scrFloor release))
+                    {
+                        continue;
+                    }
+                    holdEndDsp = conductor.dspTimeSongPosZero + release.entryTimePitchAdj;
+                }
+                if (floor.seqID <= currentSeqID && (cueKind != FloorCueKind.Hold || holdEndDsp <= nowDsp))
                 {
                     continue;
                 }
@@ -264,9 +283,7 @@ namespace ADOFAI_Access
 
                 // Perfect-center timing: cue lands exactly on the tile's entry time (no lead).
                 double dueDsp = conductor.dspTimeSongPosZero + floor.entryTimePitchAdj;
-                FloorCueKind cueKind = PlayModeTiming.GetFloorCueKind(floor);
-                double cueStartDsp = TapCueService.GetFloorCueStartDsp(cueKind, dueDsp);
-                double untilDue = cueStartDsp - nowDsp;
+                double untilDue = dueDsp - nowDsp;
                 if (untilDue > horizon)
                 {
                     continue;
@@ -281,12 +298,12 @@ namespace ADOFAI_Access
                 bool multiTap = floor.tapsNeeded > 1;
                 if (untilDue >= 0.0)
                 {
-                    TapCueService.PlayFloorCueAt(cueKind, dueDsp, multiTap);
+                    TapCueService.PlayFloorCueAt(cueKind, dueDsp, multiTap, holdEndDsp);
                 }
-                else if (untilDue >= -CueLateGraceSeconds)
+                else if (untilDue >= -CueLateGraceSeconds || (cueKind == FloorCueKind.Hold && holdEndDsp > nowDsp))
                 {
                     // Slightly past center due to frame timing: play immediately as late-grace fallback.
-                    TapCueService.PlayFloorCueNow(cueKind, multiTap);
+                    TapCueService.PlayFloorCueNow(cueKind, multiTap, holdEndDsp);
                 }
             }
         }

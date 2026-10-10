@@ -38,9 +38,24 @@ namespace ADOFAI_Access
                 }
 
                 FloorCueKind cueKind = PlayModeTiming.GetFloorCueKind(floor);
-                double cueStartDsp = TapCueService.GetFloorCueStartDsp(cueKind, previewDueDsp);
-                double untilPreview = cueStartDsp - nowDsp;
-                if (untilPreview < 0.0)
+                double holdEndDsp = 0d;
+                if (cueKind == FloorCueKind.Hold)
+                {
+                    if (!PlayModeTiming.TryGetHoldEndFloor(floor, out scrFloor release) ||
+                        !PlayModeTiming.TryGetPreviewCueDsp(conductor, floors, release, out holdEndDsp))
+                    {
+                        continue;
+                    }
+                    // Some terminal floors have no usable entryBeat. Keep their
+                    // real hold duration if beat-based preview mapping collapses.
+                    if (holdEndDsp <= previewDueDsp)
+                    {
+                        holdEndDsp = previewDueDsp + release.entryTimePitchAdj - floor.entryTimePitchAdj;
+                    }
+                }
+
+                double untilPreview = previewDueDsp - nowDsp;
+                if (untilPreview < 0.0 && (cueKind != FloorCueKind.Hold || holdEndDsp <= nowDsp))
                 {
                     HandledSeqIds.Add(floor.seqID);
                     continue;
@@ -60,11 +75,11 @@ namespace ADOFAI_Access
                 bool multiTap = floor.tapsNeeded > 1;
                 if (untilPreview >= 0.0)
                 {
-                    TapCueService.PlayFloorCueAt(cueKind, previewDueDsp, multiTap);
+                    TapCueService.PlayFloorCueAt(cueKind, previewDueDsp, multiTap, holdEndDsp);
                 }
                 else
                 {
-                    TapCueService.PlayFloorCueNow(cueKind, multiTap);
+                    TapCueService.PlayFloorCueNow(cueKind, multiTap, holdEndDsp);
                 }
             }
         }

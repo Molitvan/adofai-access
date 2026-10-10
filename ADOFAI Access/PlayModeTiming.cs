@@ -5,14 +5,12 @@ using UnityEngine;
 namespace ADOFAI_Access
 {
     // Which cue (if any) a floor should produce. Holds (scrFloor.holdLength > -1) replace the
-    // tap cue: a hold run plays HoldStart at its first hold tile and HoldEnd at the release tile
-    // (the first non-hold tile after the run); tiles in the middle of a chained hold are silent.
+    // tap cue: a hold run plays one looping interval from its first tile to the release tile.
     internal enum FloorCueKind
     {
         None = 0,
         Tap = 1,
-        HoldStart = 2,
-        HoldEnd = 3
+        Hold = 2
     }
 
     internal static class PlayModeTiming
@@ -30,15 +28,38 @@ namespace ADOFAI_Access
             if (isHold)
             {
                 // Start of a hold run; tiles continuing a chained hold are silent.
-                return prevIsHold ? FloorCueKind.None : FloorCueKind.HoldStart;
+                return prevIsHold ? FloorCueKind.None : FloorCueKind.Hold;
             }
 
             if (prevIsHold)
             {
-                return FloorCueKind.HoldEnd;
+                return FloorCueKind.None;
             }
 
             return FloorCueKind.Tap;
+        }
+
+        internal static bool TryGetHoldEndFloor(scrFloor start, out scrFloor release)
+        {
+            release = null;
+            if (start == null || start.holdLength < 0)
+            {
+                return false;
+            }
+
+            scrFloor floor = start;
+            while (floor.holdLength > -1)
+            {
+                scrFloor next = floor.nextfloor;
+                if (next == null || next.seqID <= floor.seqID)
+                {
+                    return false;
+                }
+                floor = next;
+            }
+
+            release = floor;
+            return true;
         }
 
         // Small nudge applied when classifying a position into a constant-BPM

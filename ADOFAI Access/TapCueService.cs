@@ -66,20 +66,13 @@ namespace ADOFAI_Access
             GeneratedClipName = "ADOFAI_Access_DefaultListenEndCue",
             GeneratedToneHz = 987.77f
         };
-        // Played at the start/end of hold tiles (scrFloor.holdLength > -1) in place of the tap cue.
-        private static readonly CueClipState HoldStartCueState = new CueClipState
+        // Looped for the whole hold interval, independently of the clip's length.
+        private static readonly CueClipState HoldCueState = new CueClipState
         {
-            FileName = "hold_start.wav",
-            EmbeddedResourceName = "ADOFAI_Access.Audio.hold_start.wav",
-            GeneratedClipName = "ADOFAI_Access_DefaultHoldStartCue",
+            FileName = "hold.wav",
+            EmbeddedResourceName = "ADOFAI_Access.Audio.hold.wav",
+            GeneratedClipName = "ADOFAI_Access_DefaultHoldCue",
             GeneratedToneHz = 880f
-        };
-        private static readonly CueClipState HoldEndCueState = new CueClipState
-        {
-            FileName = "hold_end.wav",
-            EmbeddedResourceName = "ADOFAI_Access.Audio.hold_end.wav",
-            GeneratedClipName = "ADOFAI_Access_DefaultHoldEndCue",
-            GeneratedToneHz = 659.25f
         };
 
         public static string CueFilePath
@@ -135,72 +128,60 @@ namespace ADOFAI_Access
             PlayCueAt(ListenEndCueState, dspTime, allowFallbackWhileCustomLoads: true);
         }
 
-        public static double GetFloorCueStartDsp(FloorCueKind kind, double alignmentDsp)
-        {
-            if (kind != FloorCueKind.HoldEnd)
-            {
-                return alignmentDsp;
-            }
-
-            double cueDuration = GetCueDurationSeconds(HoldEndCueState, allowFallbackWhileCustomLoads: true);
-            return alignmentDsp - cueDuration;
-        }
-
         // Dispatch the correct cue for a classified floor (see PlayModeTiming.GetFloorCueKind).
-        // dspTime is the floor alignment timestamp; hold-end cues finish there instead of starting there.
-        public static void PlayFloorCueAt(FloorCueKind kind, double dspTime, bool multiTap)
+        public static void PlayFloorCueAt(FloorCueKind kind, double dspTime, bool multiTap, double holdEndDsp = 0d)
         {
             switch (kind)
             {
                 case FloorCueKind.Tap:
                     PlayCueAt(dspTime, multiTap);
                     break;
-                case FloorCueKind.HoldStart:
-                    PlayHoldStartAt(dspTime);
-                    break;
-                case FloorCueKind.HoldEnd:
-                    // The release timestamp is the cue's end alignment point, matching the
-                    // listen-repeat boundary markers. Start the clip early so it finishes
-                    // exactly when the hold ends.
-                    PlayHoldEndAt(GetFloorCueStartDsp(kind, dspTime));
+                case FloorCueKind.Hold:
+                    PlayHoldAt(dspTime, holdEndDsp);
                     break;
             }
         }
 
-        public static void PlayFloorCueNow(FloorCueKind kind, bool multiTap)
+        public static void PlayFloorCueNow(FloorCueKind kind, bool multiTap, double holdEndDsp = 0d)
         {
             switch (kind)
             {
                 case FloorCueKind.Tap:
                     PlayCueNow(multiTap);
                     break;
-                case FloorCueKind.HoldStart:
-                    PlayHoldStartNow();
-                    break;
-                case FloorCueKind.HoldEnd:
-                    PlayHoldEndNow();
+                case FloorCueKind.Hold:
+                    PlayHoldAt(AudioSettings.dspTime, holdEndDsp);
                     break;
             }
         }
 
-        public static void PlayHoldStartNow()
+        public static void PlayHoldNow(double durationSeconds = 1d)
         {
-            PlayCueNow(HoldStartCueState, allowFallbackWhileCustomLoads: true);
+            double now = AudioSettings.dspTime;
+            PlayHoldAt(now, now + durationSeconds);
         }
 
-        public static void PlayHoldStartAt(double dspTime)
+        public static void PlayHoldAt(double startDsp, double endDsp)
         {
-            PlayCueAt(HoldStartCueState, dspTime, allowFallbackWhileCustomLoads: true);
-        }
+            EnsureAudioReady(HoldCueState);
+            AudioClip clip = SelectClip(HoldCueState, allowFallbackWhileCustomLoads: true);
+            startDsp = Math.Max(startDsp, AudioSettings.dspTime);
+            if (clip == null || endDsp <= startDsp)
+            {
+                return;
+            }
 
-        public static void PlayHoldEndNow()
-        {
-            PlayCueNow(HoldEndCueState, allowFallbackWhileCustomLoads: true);
-        }
+            CueSourceSlot slot = AcquirePoolSlot(startDsp, endDsp - startDsp);
+            if (slot?.Source == null)
+            {
+                return;
+            }
 
-        public static void PlayHoldEndAt(double dspTime)
-        {
-            PlayCueAt(HoldEndCueState, dspTime, allowFallbackWhileCustomLoads: true);
+            slot.Source.pitch = 1f;
+            slot.Source.clip = clip;
+            slot.Source.loop = true;
+            slot.Source.PlayScheduled(startDsp);
+            slot.Source.SetScheduledEndTime(endDsp);
         }
 
         public static double GetListenStartCueDurationSeconds()
@@ -266,11 +247,12 @@ namespace ADOFAI_Access
                 }
 
                 slot.Source.Stop();
+                slot.Source.loop = false;
                 slot.BusyUntilDsp = 0d;
             }
         }
 
-        private static CueSourceSlot AcquirePoolSlot(double dspTime, float clipLengthSeconds)
+        private static CueSourceSlot AcquirePoolSlot(double dspTime, double clipLengthSeconds)
         {
             EnsureAudioSource();
             if (CuePool.Count == 0)
@@ -293,6 +275,8 @@ namespace ADOFAI_Access
                 if (existing.BusyUntilDsp <= nowDsp + 0.0001 && !existing.Source.isPlaying)
                 {
                     existing.BusyUntilDsp = busyUntil;
+                    existing.Source.Stop();
+                    existing.Source.loop = false;
                     return existing;
                 }
             }

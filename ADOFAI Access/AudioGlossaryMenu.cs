@@ -30,15 +30,9 @@ namespace ADOFAI_Access
             },
             new GlossaryEntry
             {
-                Label = "Hold start",
-                Description = "Plays when a hold begins.",
-                Play = () => TapCueService.PlayHoldStartNow()
-            },
-            new GlossaryEntry
-            {
-                Label = "Hold end",
-                Description = "Plays when a hold ends.",
-                Play = () => TapCueService.PlayHoldEndNow()
+                Label = "Hold",
+                Description = "Plays continuously for the duration of a hold. This example lasts one second.",
+                Play = () => TapCueService.PlayHoldNow()
             },
             new GlossaryEntry
             {
@@ -133,6 +127,7 @@ namespace ADOFAI_Access
 
             if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space) || MenuGamepad.ConfirmPressed())
             {
+                TapCueService.StopAllCues();
                 Entries[_selectedIndex].Play?.Invoke();
             }
         }
