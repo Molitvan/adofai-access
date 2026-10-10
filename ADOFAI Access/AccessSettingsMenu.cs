@@ -6,6 +6,7 @@ namespace ADOFAI_Access
     internal static class AccessSettingsMenu
     {
         private const KeyCode ToggleKey = KeyCode.F5;
+        private const string DisableBpmWarning = "Warning: disabling this option is not recommended and can cause problems. Press enter to continue anyway or escape to cancel.";
 
         private sealed class SettingOption
         {
@@ -14,6 +15,7 @@ namespace ADOFAI_Access
             public Func<ModSettingsData, string> GetValue;
             public Action<ModSettingsData, int> Change;
             public Action<ModSettingsData> Activate;
+            public Func<ModSettingsData, bool> ConfirmBeforeDisabling;
         }
 
         private static readonly SettingOption[] Options =
@@ -48,7 +50,8 @@ namespace ADOFAI_Access
                 ControlType = "toggle",
                 GetValue = settings => settings.patternPreviewFollowInitialBpm ? "on" : "off",
                 Change = (settings, delta) => settings.patternPreviewFollowInitialBpm = delta > 0,
-                Activate = settings => settings.patternPreviewFollowInitialBpm = !settings.patternPreviewFollowInitialBpm
+                Activate = settings => settings.patternPreviewFollowInitialBpm = !settings.patternPreviewFollowInitialBpm,
+                ConfirmBeforeDisabling = settings => settings.patternPreviewFollowInitialBpm
             },
             new SettingOption
             {
@@ -64,7 +67,8 @@ namespace ADOFAI_Access
                 ControlType = "toggle",
                 GetValue = settings => settings.listenRepeatFollowInitialBpm ? "on" : "off",
                 Change = (settings, delta) => settings.listenRepeatFollowInitialBpm = delta > 0,
-                Activate = settings => settings.listenRepeatFollowInitialBpm = !settings.listenRepeatFollowInitialBpm
+                Activate = settings => settings.listenRepeatFollowInitialBpm = !settings.listenRepeatFollowInitialBpm,
+                ConfirmBeforeDisabling = settings => settings.listenRepeatFollowInitialBpm
             },
             new SettingOption
             {
@@ -104,6 +108,7 @@ namespace ADOFAI_Access
         private static int _selectedIndex;
         private static bool _restoreResponsive;
         private static bool _wasPausedBeforeOpen;
+        private static SettingOption _pendingDisableOption;
 
         public static bool IsOpen => _open;
         public static void CloseFromExternal(bool speak = false) => Close(speak);
@@ -112,6 +117,12 @@ namespace ADOFAI_Access
         {
             if (AudioGlossaryMenu.IsOpen)
             {
+                return;
+            }
+
+            if (_open && _pendingDisableOption != null)
+            {
+                HandleDisableConfirmation();
                 return;
             }
 
@@ -248,6 +259,7 @@ namespace ADOFAI_Access
         private static void Close(bool speak = true)
         {
             _open = false;
+            _pendingDisableOption = null;
 
             scrController controller = ADOBase.controller;
             if (controller != null)
@@ -278,6 +290,11 @@ namespace ADOFAI_Access
             }
 
             ModSettingsData settings = ModSettings.Current;
+            if (delta < 0 && RequestDisableConfirmation(option, settings))
+            {
+                return;
+            }
+
             option.Change(settings, delta);
             ModSettings.Save();
             SpeakChangedValue(settings);
@@ -293,9 +310,47 @@ namespace ADOFAI_Access
             }
 
             ModSettingsData settings = ModSettings.Current;
+            if (RequestDisableConfirmation(option, settings))
+            {
+                return;
+            }
+
             option.Activate(settings);
             ModSettings.Save();
             SpeakChangedValue(settings);
+        }
+
+        private static bool RequestDisableConfirmation(SettingOption option, ModSettingsData settings)
+        {
+            if (option.ConfirmBeforeDisabling == null || !option.ConfirmBeforeDisabling(settings))
+            {
+                return false;
+            }
+
+            _pendingDisableOption = option;
+            SpeakAlways(DisableBpmWarning, interrupt: true);
+            return true;
+        }
+
+        private static void HandleDisableConfirmation()
+        {
+            if (Input.GetKeyDown(KeyCode.Escape) || MenuGamepad.CancelPressed())
+            {
+                CustomMenuInputGuard.SuppressPauseForFrames();
+                _pendingDisableOption = null;
+                SpeakAlways("Cancelled. Option remains on.", interrupt: true);
+                return;
+            }
+
+            if (Input.GetKeyDown(KeyCode.Return) || MenuGamepad.ConfirmPressed())
+            {
+                SettingOption option = _pendingDisableOption;
+                _pendingDisableOption = null;
+                ModSettingsData settings = ModSettings.Current;
+                option.Change(settings, -1);
+                ModSettings.Save();
+                SpeakChangedValue(settings);
+            }
         }
 
         private static void SpeakCurrentOption()
