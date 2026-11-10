@@ -1,6 +1,6 @@
 # ADOFAI Access
 
-A blind accessibility mod for A Dance of Fire and Ice (work in progress)
+A blind accessibility mod for A Dance of Fire and Ice
 
 <!-- website-hide-start -->
 
@@ -11,6 +11,10 @@ ADOFAI Access is also available on my website (recommended for most users)
 [View ADOFAI Access on my website](https://molitvan.me/projects/adofai-access)
 
 <!-- website-hide-end -->
+
+## Note About Unsupported Features
+
+Currently, the mod is in a pretty good state and is enough for normal play without any assistance. However, some features aren't supported yet. The level editor doesn't work at all, and Neo Cosmos is still experimental.
 
 ## Installation
 Note: you have to have A Dance of Fire and Ice installed before following this
